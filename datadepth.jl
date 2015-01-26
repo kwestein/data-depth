@@ -3,20 +3,19 @@ using Clp
 using Cbc
 using Plotly
 
-#TODO specify that all variables are unconstrained
-#TODO importing data sets (Dan Chen's)
-function chinnecksHeuristics(S, id, n, doPrint)
+function chinnecksHeuristics(S, id, doPrint)
     coverSet = {}
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
     epsilon = 1
+    n = ndims(S)
     model = Model(solver=ClpSolver())
 
     @defVar(model, a[1:n] )
     @defVar(model, e[1:length(S)] >= 0)
 
     @defConstrRef constraints[1:size(S,1)]
-
+#TODO: getting constraint LHS
     for i = 1:size(S,1)
         constraint = 0
         for j = 1:n
@@ -91,12 +90,13 @@ function chinnecksHeuristics(S, id, n, doPrint)
     length(coverSet)
 end
 
-function MIP(S, id, n, doPrint)
+function MIP(S, id, doPrint)
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
 
     epsilon = 1
     M = 1000
+    n = ndims(S)
 
     model = Model(solver=CbcSolver())
 
@@ -129,34 +129,36 @@ function importFile(filename, delim)
     readdlm(filename, delim)
 end
 
-function contourPlotResults(set, results) #TODO
+function contourPlotResults(set, results)
     Plotly.signin("kirstenwesteinde", "bfod5kcm69")
     data = [
-        "x" => set[:,1],
-        "y" => set[:,2],
+      [
         "z" => results,
-        "type" => "contour"
-    ]
-    response = Plotly.plot(data)
-    plot_url = response["url"]
-end
-
-function scatterPlotPoints(set) #TODO
-    Plotly.signin("kirstenwesteinde", "bfod5kcm69")
-    data = [
         "x" => set[:,1],
         "y" => set[:,2],
-        "type" => "scatter"
+        "type" => "contour"
+      ]
     ]
-
-    response = Plotly.plot(data)
+    response = Plotly.plot(data, ["filename" => "simple-contour", "fileopt" => "overwrite"])
     plot_url = response["url"]
 end
 
-data = importCSVFile("2dpoints.csv")
-numDimensions = ndims(data)
-chinnecksResults = chinnecksHeuristics(data, 25, numDimensions, false)
-mipResults = MIP(data, 25, numDimensions, false)
+function scatterPlotPoints(set)
+    Plotly.signin("kirstenwesteinde", "bfod5kcm69")
+    data = [[
+        "x" => set[:, 1],
+        "y" => set[:, 2],
+        "type" => "scatter"
+    ]]
+    response = Plotly.plot(data, ["filename" => "depth-data-scatter", "fileopt" => "overwrite"])
+    plot_url = response["url"]
+end
 
-println("Chinneck's results: ",chinnecksResults,", MIP results: ",mipResults) #TODO: chinneck's results are often incorrect
-
+function findAllDepths(data)
+    numPoints = size(data, 1)
+    depths = [0 for i=1:numPoints]
+    for i = 1:numPoints
+        depths[i] = MIP(data, i, false)
+    end
+    contourPlotResults(data, depths)
+end
