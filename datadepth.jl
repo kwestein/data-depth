@@ -134,31 +134,20 @@ function contourPlotResults(set, results)
 
     x = set[:, 1]
     y = set[:, 2]
-    z = {results[1] => [1]}
+    z = {results[1] => [Point(x[1], y[1])]}
     for i=2:length(results)
         if haskey(z, results[i])
-            push!(z[results[i]], i)
+            push!(z[results[i]], Point(x[i],y[i]))
         else
-            z[results[i]] = [i]
+            z[results[i]] = [Point(x[i], y[i])]
         end
     end
 
-    data = [["x" => Int64[], "y" => Int64[], "type" => "scatter"] for i=1:length(values(z))]
+    data = [["x" => Int64[], "y" => Int64[], "type" => "scatter"] for i=1:length(keys(z))]
     for k in keys(z)
-        x_for_trace = Int64[]
-        y_for_trace = Int64[]
-
-        for index=1:length(z[k])
-            push!(x_for_trace, x[z[k][index]])
-            push!(y_for_trace, y[z[k][index]])
-        end
-
-        push!(x_for_trace, x[z[k][1]])
-        push!(y_for_trace, y[z[k][1]])
-
         trace = [
-            "x" => x_for_trace,
-            "y" => y_for_trace,
+            "x" => push!([z[k][i].x for i=1:length(z[k])], z[k][1].x),
+            "y" => push!([z[k][i].y for i=1:length(z[k])], z[k][1].y),
             "type" => "scatter",
             "name" => k
         ]
