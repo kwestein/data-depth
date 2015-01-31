@@ -15,7 +15,7 @@ function chinnecksHeuristics(S, id, doPrint)
     @defVar(model, e[1:length(S)] >= 0)
 
     @defConstrRef constraints[1:size(S,1)]
-#TODO: getting constraint LHS
+
     for i = 1:size(S,1)
         constraint = 0
         for j = 1:n
@@ -131,14 +131,38 @@ end
 
 function contourPlotResults(set, results)
     Plotly.signin("kirstenwesteinde", "bfod5kcm69")
-    data = [
-      [
-        "z" => results,
-        "x" => set[:,1],
-        "y" => set[:,2],
-        "type" => "contour"
-      ]
-    ]
+
+    x = set[:, 1]
+    y = set[:, 2]
+    z = {results[1] => [1]}
+    for i=2:length(results)
+        if haskey(z, results[i])
+            push!(z[results[i]], i)
+        else
+            z[results[i]] = [i]
+        end
+    end
+
+    data = [["x" => Int64[], "y" => Int64[], "type" => "scatter"] for i=1:length(values(z))]
+    for depth in values(z)
+        x_for_trace = Int64[]
+        y_for_trace = Int64[]
+
+        for index=1:length(depth)
+            push!(x_for_trace, x[depth[index]])
+            push!(y_for_trace, y[depth[index]])
+        end
+
+        trace = [
+            "x" => x_for_trace,
+            "y" => y_for_trace,
+            "type" => "scatter",
+            "name" => "Depth "
+        ]
+
+        push!(data, trace)
+    end
+
     response = Plotly.plot(data, ["filename" => "simple-contour", "fileopt" => "overwrite"])
     plot_url = response["url"]
 end
@@ -162,3 +186,6 @@ function findAllDepths(data)
     end
     contourPlotResults(data, depths)
 end
+
+data = importCSVFile("2dpoints.csv")
+findAllDepths(data)
