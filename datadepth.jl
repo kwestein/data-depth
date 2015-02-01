@@ -3,6 +3,11 @@ using Clp
 using Cbc
 using Plotly
 
+#type Point{T<:Real}
+#  x::T
+#  y::T
+#end
+
 function chinnecksHeuristics(S, id, doPrint)
     coverSet = {}
     p = S[id,:]
@@ -121,6 +126,10 @@ function MIP(S, id, doPrint)
     getObjectiveValue(model)
 end
 
+function randomSweepingHyperplane(S)
+
+end
+
 function importCSVFile(filename)
     importFile(filename, ',')
 end
@@ -157,6 +166,7 @@ function contourPlotResults(set, results)
 
     response = Plotly.plot(data, ["filename" => "simple-contour", "fileopt" => "overwrite"])
     plot_url = response["url"]
+    println(plot_url)
 end
 
 function scatterPlotPoints(set)
@@ -183,7 +193,7 @@ function findAllDepths(data)
 end
 
 function main()
-    data = importCSVFile("2dpointsordered.csv")
+    data = importCSVFile("points2.csv")
     tic()
     chinnecks_result = chinnecksHeuristics(data, 17, false)
     chinneck_time = toq()
@@ -192,7 +202,7 @@ function main()
     mip_time = toq()
     tic()
     all_depths_result = findAllDepths(data)
-    deepest_depth = maximum(all_depths_result)#indmax for index
+    deepest_depth = maximum(all_depths_result)
     all_depths_time = toq()
 
     println("Chinneck's result: ",chinnecks_result," took ",chinneck_time," seconds")
