@@ -125,6 +125,84 @@ function MIP(S, id, doPrint)
     solve(model)
     getObjectiveValue(model)
 end
+function projection(S, id, doPrint)
+    maxDepth = 0;
+    p = S[id,:]
+    S = S[[1:id-1,id+1:end],:]
+    epsilon = 1
+    n = ndims(S)
+    #WRONG DIMENSION?-----------------------------------
+    println("# of element : ", n)
+    println("total points : ", size(S,1))
+
+    model = Model()
+
+    @defVar(model, a[1:n] )
+    @defVar(model, e[1:length(S)] >= 0)
+
+    @defConstrRef constraints[1:size(S,1)]
+    gradientC = Array(Any,size(S,1),n)
+    gradientCsquare = Array(Any,size(S,1),1)
+
+    #initalizing constraints,gradient C and gradient C square
+    for i = 1:size(S,1)
+        constraint = 0
+        gradientCsquare[i] = 0
+        for j = 1:n
+           gradientC[i,j] = (S[i,j] - p[j])
+           gradientCsquare[i] = gradientCsquare[i] + (gradientC[i,j])^2
+           constraint = constraint + (S[i,j] - p[j])*a[j]
+        end
+        constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
+    end
+
+    #select Random point
+    currentP = 10*rand(1,n)
+
+
+    for maxLoop = 1:1000000
+        result = 0
+        #select Random constraint
+        randConstraint = rand(1:size(S,1))
+        #evaluate constraint chosen
+        for i = 1:n
+            result = result + currentP[i]*gradientC[randConstraint,i]
+        end
+
+        #if violate,update point
+        if result < 1
+            feaVecCoef = -(result-epsilon)/gradientCsquare[randConstraint]
+            fv = zeros(Any,n)
+            for i = 1:n
+                currentP[i] = currentP[i] + feaVecCoef*gradientC[i]
+            end
+        #else choose another point
+        else
+            randConstraint = rand(1:size(S,1))
+            continue
+        end
+
+        #checking number of violated constraint
+        tempDepth = 0
+        for i = 1:size(S,1)
+            result = 0
+            for j = 1:n
+                result = result + currentP[j]*gradientC[i,j]
+            end
+            if result < 1
+                tempDepth = tempDepth + 1
+            end
+        end
+
+    #check if it has bigger depth
+        if tempDepth > maxDepth
+            maxDepth = tempDepth
+        end
+    end
+
+    return maxDepth
+end
+
 
 function randomSweepingHyperplane(S)
 
