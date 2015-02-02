@@ -285,7 +285,8 @@ function main()
     all_depths_result = findAllDepths(data)
     deepest_depth = maximum(all_depths_result)
     all_depths_time = toq()
-
+    
+    println("Projection result: ",projection_result," took ",projection_time," seconds")
     println("Chinneck's result: ",chinnecks_result," took ",chinneck_time," seconds")
     println("MIP result: ",mip_result," took ",mip_time," seconds")
     println("Deepest point: ",deepest_depth," took ",all_depths_time," seconds")
