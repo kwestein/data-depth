@@ -127,43 +127,63 @@ function MIP(S, id, doPrint)
 end
 function projection(S, id, doPrint)
     maxDepth = 0;
+
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
     epsilon = 1
-    n = ndims(S)
-    #WRONG DIMENSION?-----------------------------------
-    println("# of element : ", n)
-    println("total points : ", size(S,1))
+    n::Int = length(S)/size(S,1) -1
 
-    model = Model()
 
-    @defVar(model, a[1:n] )
-    @defVar(model, e[1:length(S)] >= 0)
+    #println("# of element : ", n)
+    #println("total points : ", size(S,1) + 1)
+    #print(p)
 
-    @defConstrRef constraints[1:size(S,1)]
+    #initialize gradientC and gradientCsquare
     gradientC = Array(Any,size(S,1),n)
     gradientCsquare = Array(Any,size(S,1),1)
-
-    #initalizing constraints,gradient C and gradient C square
     for i = 1:size(S,1)
-        constraint = 0
         gradientCsquare[i] = 0
         for j = 1:n
-           gradientC[i,j] = (S[i,j] - p[j])
+           #temp = S[i,j] - p[j]
+           gradientC[i,j] = S[i,j] - p[j]
            gradientCsquare[i] = gradientCsquare[i] + (gradientC[i,j])^2
-           constraint = constraint + (S[i,j] - p[j])*a[j]
+
         end
-        constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
+
     end
 
     #select Random point
-    currentP = 10*rand(1,n)
+    currentP = size(S,1)*rand(1,n)
+    #currentP = p
+    #currentP[n] = currentP[n]+1
 
-
-    for maxLoop = 1:1000000
+    r = 1
+    randConstraint = 1
+    for maxLoop = 1:size(S,1)*1000
         result = 0
-        #select Random constraint
-        randConstraint = rand(1:size(S,1))
+
+        #select Random constraint v1
+        r = rand(1:size(S,1))
+        while r == randConstraint
+        #    print("oops")
+            r = rand(1:size(S,1))
+        end
+
+        #select Random constraint v2
+        #   select random number but ignore random number
+        #   below previous random number
+        #if r >= size(S,1)
+        #    r = 1
+        #end
+        #    r = rand(r:size(S,1))
+
+        #if same random number as before,continue back
+        if r == randConstraint
+            continue
+        end
+
+        randConstraint = r
+
         #evaluate constraint chosen
         for i = 1:n
             result = result + currentP[i]*gradientC[randConstraint,i]
@@ -171,14 +191,16 @@ function projection(S, id, doPrint)
 
         #if violate,update point
         if result < 1
-            feaVecCoef = -(result-epsilon)/gradientCsquare[randConstraint]
+            #feaVecCoef = (epsilon-result)/gradientCsquare[randConstraint]
+            #println(epsilon-result)
+            feaVecCoef = (epsilon-result)/sqrt(gradientCsquare[randConstraint])
             fv = zeros(Any,n)
             for i = 1:n
                 currentP[i] = currentP[i] + feaVecCoef*gradientC[i]
             end
         #else choose another point
         else
-            randConstraint = rand(1:size(S,1))
+            #randConstraint = rand(1:size(S,1))
             continue
         end
 
@@ -202,7 +224,6 @@ function projection(S, id, doPrint)
 
     return maxDepth
 end
-
 
 function randomSweepingHyperplane(S)
 
