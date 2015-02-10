@@ -226,7 +226,68 @@ function projection(S, id, doPrint)
 end
 
 function randomSweepingHyperplane(S)
+    depth = Array(Any,size(S,1),1)
+    fill!(depth,size(S,1))
+    #println(depth[1])
+    n::Int = length(S)/size(S,1) -1
 
+    #z = how many random hyperplane
+    #increase z for higher accuracy
+    for z = 1:3
+
+        #random constraint/coefficient
+        coeff = 10*rand(1,n)
+
+        #checking and numbering the order
+        RHS = 10000
+        order = 0
+        #downward direction
+        for i = 1:10000
+            epsilon = 1
+            for j = 1:size(S,1)
+                result = 0
+                for k = 1:n
+                    #println(k)
+                    result = result + coeff[k]*S[j,k]
+                end
+                #println(RHS," ",result," ",RHS +1)
+
+                if result >= RHS && result < RHS + 1
+                    if(order< depth[j])
+                        depth[j] = order
+                    end
+                    order = order + 1
+                end
+            end
+            RHS = RHS - 1
+        end
+        order = 0
+        RHS = 0
+        #upward dircetion
+        for i = 1:10000
+            epsilon = 1
+            for j = 1:size(S,1)
+                result = 0
+                for k = 1:n
+                    #println(k)
+                    result = result + coeff[k]*S[j,k]
+                end
+                #println(RHS," ",result," ",RHS +1)
+
+                if result >= RHS && result < RHS + 1
+                    if(order< depth[j])
+                        depth[j] = order
+                    end
+                order = order + 1
+                end
+            end
+            RHS = RHS + 1
+            if order > 24
+                break
+            end
+        end
+    end
+    return depth
 end
 
 function importCSVFile(filename)
