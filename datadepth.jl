@@ -226,68 +226,56 @@ function projection(S, id, doPrint)
 end
 
 function randomSweepingHyperplane(S)
-    depth = Array(Any,size(S,1),1)
-    fill!(depth,size(S,1))
-    #println(depth[1])
-    n::Int = length(S)/size(S,1) -1
+depth = Array(Any,size(S,1),1)
+        fill!(depth,size(S,1))
+        n::Int = length(S)/size(S,1) -1
 
-    #z = how many random hyperplane
-    #increase z for higher accuracy
-    for z = 1:3
+        for max = 1:1000
+            results = zeros(size(S,1),1)
+            #random constraint
+            coeff = 1*rand(1,n)
 
-        #random constraint/coefficient
-        coeff = 10*rand(1,n)
-
-        #checking and numbering the order
-        RHS = 10000
-        order = 0
-        #downward direction
-        for i = 1:10000
-            epsilon = 1
-            for j = 1:size(S,1)
+            #evaluate all point with costraint
+            for i = 1:size(S,1)
                 result = 0
-                for k = 1:n
-                    #println(k)
-                    result = result + coeff[k]*S[j,k]
+                for j = 1:n
+                    result = result + coeff[j]*S[i,j]
                 end
-                #println(RHS," ",result," ",RHS +1)
+                results[i] = result
+            end
 
-                if result >= RHS && result < RHS + 1
-                    if(order< depth[j])
-                        depth[j] = order
-                    end
-                    order = order + 1
-                end
+            #sorting ascending
+            tempArray = zeros(size(S,1),1)
+            for i = 1: size(S,1)
+                tempArray[i] = i
             end
-            RHS = RHS - 1
-        end
-        order = 0
-        RHS = 0
-        #upward dircetion
-        for i = 1:10000
-            epsilon = 1
-            for j = 1:size(S,1)
-                result = 0
-                for k = 1:n
-                    #println(k)
-                    result = result + coeff[k]*S[j,k]
-                end
-                #println(RHS," ",result," ",RHS +1)
 
-                if result >= RHS && result < RHS + 1
-                    if(order< depth[j])
-                        depth[j] = order
+            swapped = true
+            while swapped
+                swapped = false
+                for i = 1:size(S,1)-1
+                    if results[tempArray[i]]>results[tempArray[i+1]]
+                        temp = tempArray[i]
+                        tempArray[i] = tempArray[i+1]
+                        tempArray[i+1] = temp
+                        swapped = true
                     end
-                order = order + 1
                 end
             end
-            RHS = RHS + 1
-            if order > 24
-                break
+
+            for i = 1:size(S,1)
+                if depth[i] > tempArray[i] -1
+                    depth[i] = tempArray[i] - 1
+                end
+                #descending
+                if depth[i] > size(S,1) - depth[i] - 1
+                    depth[i] = size(S,1) - depth[i] - 1
+                end
+                depth[i] = round(depth[i])
             end
+
         end
-    end
-    return depth
+        return depth
 end
 
 function importCSVFile(filename)
