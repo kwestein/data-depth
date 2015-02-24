@@ -125,6 +125,7 @@ function MIP(S, id, doPrint)
     solve(model)
     getObjectiveValue(model)
 end
+
 function projection(S, id, doPrint)
     maxDepth = 0;
 
