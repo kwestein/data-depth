@@ -118,7 +118,8 @@ function MIP(S, id, doPrint)
     end
 
     solve(model)
-    convert(Int64, getObjectiveValue(model))
+    depth = getObjectiveValue(model)
+    convert(Int64, round(depth))
 end
 
 function projection(S, id, doPrint)
@@ -349,7 +350,7 @@ function randomSweepingHyperplane(S)
             if depth[i] > size(S,1) - depth[i] - 1
                 depth[i] = size(S,1) - depth[i] - 1
             end
-            depth[i] = convert(Int64,depth[i])
+            depth[i] = convert(Int64,round(depth[i]))
         end
 
     end
