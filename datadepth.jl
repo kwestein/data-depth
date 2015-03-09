@@ -304,56 +304,56 @@ function cc(S, id, doPrint)
 end
 
 function randomSweepingHyperplane(S)
-depth = Array(Any,size(S,1),1)
-        fill!(depth,size(S,1))
-        n::Int = length(S)/size(S,1) -1
+    depth = Array(Any,size(S,1),1)
+    fill!(depth,size(S,1))
+    n::Int = length(S)/size(S,1) -1
 
-        for max = 1:1000
-            results = zeros(size(S,1),1)
-            #random constraint
-            coeff = 10*rand(1,n)-5
+    for max = 1:1000
+        results = zeros(size(S,1),1)
+        #random constraint
+        coeff = 10*rand(1,n)-5
 
-            #evaluate all point with costraint
-            for i = 1:size(S,1)
-                result = 0
-                for j = 1:n
-                    result = result + coeff[j]*S[i,j]
-                end
-                results[i] = result
+        #evaluate all point with costraint
+        for i = 1:size(S,1)
+            result = 0
+            for j = 1:n
+                result = result + coeff[j]*S[i,j]
             end
-
-            #sorting ascending
-            tempArray = zeros(size(S,1),1)
-            for i = 1: size(S,1)
-                tempArray[i] = i
-            end
-
-            swapped = true
-            while swapped
-                swapped = false
-                for i = 1:size(S,1)-1
-                    if results[tempArray[i]]>results[tempArray[i+1]]
-                        temp = tempArray[i]
-                        tempArray[i] = tempArray[i+1]
-                        tempArray[i+1] = temp
-                        swapped = true
-                    end
-                end
-            end
-
-            for i = 1:size(S,1)
-                if depth[i] > tempArray[i] -1
-                    depth[i] = tempArray[i] - 1
-                end
-                #descending
-                if depth[i] > size(S,1) - depth[i] - 1
-                    depth[i] = size(S,1) - depth[i] - 1
-                end
-                depth[i] = convert(Int64,depth[i])
-            end
-
+            results[i] = result
         end
-        return depth
+
+        #sorting ascending
+        tempArray = zeros(size(S,1),1)
+        for i = 1: size(S,1)
+            tempArray[i] = i
+        end
+
+        swapped = true
+        while swapped
+            swapped = false
+            for i = 1:size(S,1)-1
+                if results[tempArray[i]]>results[tempArray[i+1]]
+                    temp = tempArray[i]
+                    tempArray[i] = tempArray[i+1]
+                    tempArray[i+1] = temp
+                    swapped = true
+                end
+            end
+        end
+
+        for i = 1:size(S,1)
+            if depth[i] > tempArray[i] -1
+                depth[i] = tempArray[i] - 1
+            end
+            #descending
+            if depth[i] > size(S,1) - depth[i] - 1
+                depth[i] = size(S,1) - depth[i] - 1
+            end
+            depth[i] = convert(Int64,depth[i])
+        end
+
+    end
+    return depth
 end
 
 function importCSVFile(filename)
@@ -375,40 +375,25 @@ function scatterPlotPoints(set)
     plot_url = response["url"]
 end
 
-function findAllDepths(data)
-    numPoints = size(data, 1)
-    depths = [0 for i=1:numPoints]
-    for i = 1:numPoints
-        depths[i] = MIP(data, i, false)
-    end
-    if ndims(data) == 2
-        contourPlotResults(data, depths)
-    end
-    depths
-end
-
 function runAndPrintAllAlgorithms(data)
-    println("id","\t", "proj","\t","sweep","\t","MIP","\t","chnck")
+    println("id","\t", "proj","\t","sweep","\t","MIP","\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time")
     tic()
     S = randomSweepingHyperplane(data)
     sweepTime = toq()
-    proj_time = 0
-    MIP_time = 0
-    chnck_time = 0
 
     for i = 1:size(data,1)
         tic()
         projection_result = projection(data, i, false)
-        proj_time = proj_time + toq()
+        proj_time = toq()
         tic()
         MIP_result = MIP(data, i, false)
-        MIP_time = MIP_time + toq()
+        MIP_time = toq()
         tic()
         chinnecks_result = chinnecksHeuristics(data, i,false)
-        chnck_time = chnck_time + toq()
-        println(i,"\t", projection_result,"\t",S[i],"\t",MIP_result,"\t",chinnecks_result)
+        chnck_time = toq()
+        println(i,"\t", projection_result,"\t",S[i],"\t",MIP_result,"\t",chinnecks_result,"\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3))
     end
-    println("time\t",round(proj_time,3),"\t",round(sweepTime,3),"\t",round(MIP_time,3),"\t",round(chnck_time,3))
+    println("Random sweeping hyperplane time\t",round(sweepTime,3))
 end
 
 function main(filename)
