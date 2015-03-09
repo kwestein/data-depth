@@ -3,11 +3,6 @@ using Clp
 using Cbc
 using Plotly
 
-#type Point{T<:Real}
-#  x::T
-#  y::T
-#end
-
 function chinnecksHeuristics(S, id, doPrint)
     coverSet = {}
     p = S[id,:]
@@ -369,37 +364,6 @@ function importFile(filename, delim)
     readdlm(filename, delim)
 end
 
-function contourPlotResults(set, results)
-    Plotly.signin("kirstenwesteinde", "bfod5kcm69")
-
-    x = set[:, 1]
-    y = set[:, 2]
-    z = {results[1] => [Point(x[1], y[1])]}
-    for i=2:length(results)
-        if haskey(z, results[i])
-            push!(z[results[i]], Point(x[i],y[i]))
-        else
-            z[results[i]] = [Point(x[i], y[i])]
-        end
-    end
-
-    data = [["x" => Int64[], "y" => Int64[], "type" => "scatter"] for i=1:length(keys(z))]
-    for k in keys(z)
-        trace = [
-            "x" => push!([z[k][i].x for i=1:length(z[k])], z[k][1].x),
-            "y" => push!([z[k][i].y for i=1:length(z[k])], z[k][1].y),
-            "type" => "scatter",
-            "name" => k
-        ]
-
-        push!(data, trace)
-    end
-
-    response = Plotly.plot(data, ["filename" => "simple-contour", "fileopt" => "overwrite"])
-    plot_url = response["url"]
-    println(plot_url)
-end
-
 function scatterPlotPoints(set)
     Plotly.signin("kirstenwesteinde", "bfod5kcm69")
     data = [[
@@ -447,7 +411,7 @@ function main()
     
     println("id","\t", "proj","\t","sweep","\t","MIP","\t","chnck")
     tic()
-    S = randomHyperplane(data, false)
+    S = randomSweepingHyperplane(data)
     sweepTime = toq()
     proj_time = 0
     MIP_time = 0
