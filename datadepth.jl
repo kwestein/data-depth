@@ -13,7 +13,7 @@ function chinnecksHeuristics(S, id, doPrint)
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
     epsilon = 1
-    n = ndims(S)
+    n::Int = length(S)/size(S,1) -1
     model = Model(solver=ClpSolver())
 
     @defVar(model, a[1:n] )
@@ -101,7 +101,7 @@ function MIP(S, id, doPrint)
 
     epsilon = 1
     M = 1000
-    n = ndims(S)
+    n::Int = length(S)/size(S,1) -1
 
     model = Model(solver=CbcSolver())
 
@@ -127,13 +127,13 @@ function MIP(S, id, doPrint)
 end
 
 function projection(S, id, doPrint)
-    maxDepth = 0;
-
+    #SS = S
+    maxDepth = size(S,1)
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
     epsilon = 1
     n::Int = length(S)/size(S,1) -1
-
+    tempConstraint = Array(Any,size(S,1),n)
 
     #println("# of element : ", n)
     #println("total points : ", size(S,1) + 1)
@@ -154,33 +154,18 @@ function projection(S, id, doPrint)
     end
 
     #select Random point
-    currentP = size(S,1)*rand(1,n)
-    #currentP = p
-    #currentP[n] = currentP[n]+1
+    currentP = 100*rand(1,n)-50
 
     r = 1
     randConstraint = 1
-    for maxLoop = 1:size(S,1)*1000
+    currentConsId = 0
+    for maxLoop = 1:5000
         result = 0
-
-        #select Random constraint v1
+        #select Random constraint
         r = rand(1:size(S,1))
         while r == randConstraint
         #    print("oops")
             r = rand(1:size(S,1))
-        end
-
-        #select Random constraint v2
-        #   select random number but ignore random number
-        #   below previous random number
-        #if r >= size(S,1)
-        #    r = 1
-        #end
-        #    r = rand(r:size(S,1))
-
-        #if same random number as before,continue back
-        if r == randConstraint
-            continue
         end
 
         randConstraint = r
@@ -194,10 +179,10 @@ function projection(S, id, doPrint)
         if result < 1
             #feaVecCoef = (epsilon-result)/gradientCsquare[randConstraint]
             #println(epsilon-result)
-            feaVecCoef = (epsilon-result)/sqrt(gradientCsquare[randConstraint])
-            fv = zeros(Any,n)
+            feaVecCoef = abs(epsilon-result)/(sqrt(gradientCsquare[randConstraint]))
+            #fv = zeros(Any,n)
             for i = 1:n
-                currentP[i] = currentP[i] + feaVecCoef*gradientC[i]
+                currentP[i] = currentP[i] + feaVecCoef*gradientC[randConstraint,i]
             end
         #else choose another point
         else
@@ -217,12 +202,109 @@ function projection(S, id, doPrint)
             end
         end
 
-    #check if it has bigger depth
-        if tempDepth > maxDepth
+    #check if it has smaller depth and if it has smaller depth,record the constraint
+        if tempDepth < maxDepth
+            #tempConstraint = gradientC[randConstraint,1:end]
             maxDepth = tempDepth
         end
     end
+    #println("Violated : ",countViolated(SS,tempConstraint))
+    return maxDepth
+end
 
+function cc(S, id, doPrint)
+    maxDepth = size(S,1)
+    p = S[id,:]
+    SS = S
+    S = S[[1:id-1,id+1:end],:]
+    epsilon = 1
+    n::Int = length(S)/size(S,1) -1
+    tempConstraint = Array(Any,size(S,1),n)
+    done = false
+
+    #initialize gradientC and gradientCsquare
+    gradientC = Array(Any,size(S,1),n)
+    gradientCsquare = Array(Any,size(S,1),1)
+    for i = 1:size(S,1)
+        gradientCsquare[i] = 0
+        for j = 1:n
+           #temp = S[i,j] - p[j]
+           gradientC[i,j] = S[i,j] - p[j]
+           gradientCsquare[i] = gradientCsquare[i] + (gradientC[i,j])^2
+
+        end
+
+    end
+
+    #select Random point
+    currentP = 10*rand(1,n)-5
+
+    r1 = 1
+    r2 = 1
+    r3 = 1
+    currentConsId = 0
+    for maxLoop = 1:1000
+        count = 0
+        while !done
+            result1 = 0
+            result2 = 0
+            result3 = 0
+
+            #TODO : Make array of random number instead hardcode
+            #select THREE Random constraint
+            r1 = rand(1:size(S,1))
+            r2 = rand(1:size(S,1))
+            r3 = rand(1:size(S,1))
+            while r1 == r2 || r2 == r3 || r1 == r3
+                if r1 == r2
+                    r2 = rand(1:size(S,1))
+                else
+                    r3 = rand(1:size(S,1))
+                end
+            end
+            #evaluate constraints chosen
+            for i = 1:n
+                result1 = result1 + currentP[i]*gradientC[r1,i]
+                result2 = result2 + currentP[i]*gradientC[r2,i]
+                result3 = result3 + currentP[i]*gradientC[r3,i]
+            end
+            if result1 + result2 + result3 < 3
+                break
+            end
+            count = count + 1
+            if count > 10000
+                done = true
+            end
+        end
+        if done == true
+            break
+        end
+        feaVecCoef1 = abs(epsilon-result1)/(sqrt(gradientCsquare[r1]))
+        feaVecCoef2 = abs(epsilon-result2)/(sqrt(gradientCsquare[r2]))
+        feaVecCoef3 = abs(epsilon-result3)/(sqrt(gradientCsquare[r3]))
+        for i = 1:n
+            currentP[i] = currentP[i] + ((feaVecCoef1*gradientC[r1,i]+feaVecCoef2*gradientC[r2,i]+feaVecCoef3*gradientC[r3,i])/3)
+        end
+
+        #checking number of violated constraint
+        tempDepth = 0
+        for i = 1:size(S,1)
+            result = 0
+            for j = 1:n
+                result = result + currentP[j]*gradientC[i,j]
+            end
+            if result < 1
+                tempDepth = tempDepth + 1
+            end
+        end
+
+    #check if it has smaller depth and if it has smaller depth,record the constraint
+        if tempDepth < maxDepth
+            tempConstraint = gradientC[randConstraint,1:end]
+            maxDepth = tempDepth
+        end
+    end
+    #countViolated(SS,tempConstraint)
     return maxDepth
 end
 
@@ -234,7 +316,7 @@ depth = Array(Any,size(S,1),1)
         for max = 1:1000
             results = zeros(size(S,1),1)
             #random constraint
-            coeff = 1*rand(1,n)
+            coeff = 10*rand(1,n)-5
 
             #evaluate all point with costraint
             for i = 1:size(S,1)
