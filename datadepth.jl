@@ -118,7 +118,7 @@ function MIP(S, id, doPrint)
     end
 
     solve(model)
-    getObjectiveValue(model)
+    convert(Int64, getObjectiveValue(model))
 end
 
 function projection(S, id, doPrint)
@@ -349,7 +349,7 @@ depth = Array(Any,size(S,1),1)
                 if depth[i] > size(S,1) - depth[i] - 1
                     depth[i] = size(S,1) - depth[i] - 1
                 end
-                depth[i] = round(depth[i])
+                depth[i] = convert(Int64,depth[i])
             end
 
         end
@@ -387,28 +387,7 @@ function findAllDepths(data)
     depths
 end
 
-function main()
-    data = importCSVFile("points2.csv")
-    
-    #tic()
-    #projection_result = projection(data,17,false)
-    #projection_time = toq()
-    #tic()
-    #chinnecks_result = chinnecksHeuristics(data, 17, false)
-    #chinneck_time = toq()
-    #tic()
-    #mip_result = MIP(data, 17, false)
-    #mip_time = toq()
-    #tic()
-    #all_depths_result = findAllDepths(data)
-    #deepest_depth = maximum(all_depths_result)
-    #all_depths_time = toq()
-    
-    #println("Projection result: ",projection_result," took ",projection_time," seconds")
-    #println("Chinneck's result: ",chinnecks_result," took ",chinneck_time," seconds")
-    #println("MIP result: ",mip_result," took ",mip_time," seconds")
-    #println("Deepest point: ",deepest_depth," took ",all_depths_time," seconds")
-    
+function runAndPrintAllAlgorithms(data)
     println("id","\t", "proj","\t","sweep","\t","MIP","\t","chnck")
     tic()
     S = randomSweepingHyperplane(data)
@@ -432,4 +411,9 @@ function main()
     println("time\t",round(proj_time,3),"\t",round(sweepTime,3),"\t",round(MIP_time,3),"\t",round(chnck_time,3))
 end
 
-main()
+function main(filename)
+    data = importCSVFile(filename)
+    runAndPrintAllAlgorithms(data)
+end
+
+main("points2.csv")
