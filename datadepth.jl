@@ -380,9 +380,35 @@ function runAndPrintAllAlgorithms(data)
     println("Sweep: ", round(sweepTime,3),", Projection: ",round(projection_total_time,3),", MIP: ",round(MIP_total_time,3),", Chinneck: ",round(chinneck_total_time,3))
 end
 
+function findAllDepths(S)
+    tic()
+    sweep_results = randomSweepingHyperplane(S, 1000)
+    sweep_deepest_point = indmax(sweep_results)
+    sweep_deepest_time = toc()
+    println("Random sweeping hyperplane found deepest point to be ",sweep_deepest_point," in ",round(sweep_deepest_time, 3)," seconds")
+
+    tic()
+    chinnecks_results = [chinnecksHeuristics(S, i,false) for i=1:size(S,1)]
+    chinneck_deepest_point = indmax(chinnecks_results)
+    chinneck_deepest_time = toc()
+    println("Chinneck's heuristics found deepest point to be ",chinneck_deepest_point," in ",round(chinneck_deepest_time, 3)," seconds")
+
+    tic()
+    MIP_results = [MIP(S, i,false) for i=1:size(S,1)]
+    MIP_deepest_point = indmax(MIP_results)
+    MIP_deepest_time = toc()
+    println("MIP found deepest point to be ",MIP_deepest_point," in ",round(MIP_deepest_time, 3)," seconds")
+
+    tic()
+    projection_results = [projection(S, i,false) for i=1:size(S,1)]
+    projection_deepest_point = indmax(projection_results)
+    projection_deepest_time = toc()
+    println("Projection found deepest point to be ",projection_deepest_point," in ",round(projection_deepest_time, 3)," seconds")
+end
+
 function main(filename)
     data = importCSVFile(filename)
-    runAndPrintAllAlgorithms(data)
+    findAllDepths(data)
 end
 
 main("points2.csv")
