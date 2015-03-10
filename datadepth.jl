@@ -304,53 +304,29 @@ function cc(S, id, doPrint)
     return maxDepth
 end
 
-function randomSweepingHyperplane(S)
-    depth = Array(Any,size(S,1),1)
-    fill!(depth,size(S,1))
-    n::Int = length(S)/size(S,1) -1
+function randomSweepingHyperplane(S, numIterations)
+    numPoints = size(S,1)
+    numDimensions::Int = length(S)/numPoints -1
 
-    for max = 1:1000
-        results = zeros(size(S,1),1)
+    depth = [numPoints for i=1:numPoints]
+
+    @parallel for max = 1:numIterations
         #random constraint
-        coeff = 10*rand(1,n)-5
+        coeff = 10*rand(1,numDimensions)-5
 
-        #evaluate all point with costraint
-        for i = 1:size(S,1)
-            result = 0
-            for j = 1:n
-                result = result + coeff[j]*S[i,j]
-            end
-            results[i] = result
-        end
+        #evaluate all point with constraint
+        results = [sum([coeff[j]*S[i,j] for j = 1:numDimensions]) for i = 1:numPoints]
 
         #sorting ascending
-        tempArray = zeros(size(S,1),1)
-        for i = 1: size(S,1)
-            tempArray[i] = i
-        end
+        ascending_indices = sortperm(results)
 
-        swapped = true
-        while swapped
-            swapped = false
-            for i = 1:size(S,1)-1
-                if results[tempArray[i]]>results[tempArray[i+1]]
-                    temp = tempArray[i]
-                    tempArray[i] = tempArray[i+1]
-                    tempArray[i+1] = temp
-                    swapped = true
-                end
-            end
-        end
+        #sorting descending
+        descending_indices = sortperm(results, rev=true)
 
-        for i = 1:size(S,1)
-            if depth[i] > tempArray[i] -1
-                depth[i] = tempArray[i] - 1
-            end
-            #descending
-            if depth[i] > size(S,1) - depth[i] - 1
-                depth[i] = size(S,1) - depth[i] - 1
-            end
-            depth[i] = convert(Int64,round(depth[i]))
+        for i=1:numPoints
+            ascending_depth = findin(ascending_indices, i) - 1
+            descending_depth = findin(descending_indices, i) - 1
+            depth[i] = minimum([ascending_depth, descending_depth])
         end
 
     end
@@ -379,7 +355,7 @@ end
 function runAndPrintAllAlgorithms(data)
     println("id","\t", "proj","\t","sweep","\t","MIP","\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time")
     tic()
-    S = randomSweepingHyperplane(data)
+    S = randomSweepingHyperplane(data, 10000)
     sweepTime = toq()
 
     for i = 1:size(data,1)
@@ -394,7 +370,8 @@ function runAndPrintAllAlgorithms(data)
         chnck_time = toq()
         println(i,"\t", projection_result,"\t",S[i],"\t",MIP_result,"\t",chinnecks_result,"\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3))
     end
-    println("Random sweeping hyperplane time\t",round(sweepTime,3))
+
+    println("Random sweeping hyperplane time: ", round(sweepTime,3))
 end
 
 function main(filename)
@@ -402,4 +379,4 @@ function main(filename)
     runAndPrintAllAlgorithms(data)
 end
 
-main("points2.csv")
+main("2dpoints.csv")
