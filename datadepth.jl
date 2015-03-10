@@ -50,7 +50,7 @@ function chinnecksHeuristics(S, id, doPrint)
 
         Z = [100.0 for i=1:length(candidates)]
 
-        @parallel for j = 1:length(candidates)
+        @sync @parallel for j = 1:length(candidates)
             if candidates[j]
                 candidate = constraints[j]
                 chgConstrRHS(candidate, -999)
@@ -310,7 +310,7 @@ function randomSweepingHyperplane(S, numIterations)
 
     depth = [numPoints for i=1:numPoints]
 
-    @parallel for max = 1:numIterations
+    @sync @parallel for max = 1:numIterations
         #random constraint
         coeff = 10*rand(1,numDimensions)-5
 
@@ -355,23 +355,29 @@ end
 function runAndPrintAllAlgorithms(data)
     println("id","\t", "proj","\t","sweep","\t","MIP","\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time")
     tic()
-    S = randomSweepingHyperplane(data, 10000)
+    S = randomSweepingHyperplane(data, 100)
     sweepTime = toq()
+    projection_total_time = 0
+    MIP_total_time = 0
+    chinneck_total_time = 0
 
     for i = 1:size(data,1)
         tic()
         projection_result = projection(data, i, false)
         proj_time = toq()
+        projection_total_time += proj_time
         tic()
         MIP_result = MIP(data, i, false)
         MIP_time = toq()
+        MIP_total_time += MIP_time
         tic()
         chinnecks_result = chinnecksHeuristics(data, i,false)
         chnck_time = toq()
+        chinneck_total_time += chnck_time
         println(i,"\t", projection_result,"\t",S[i],"\t",MIP_result,"\t",chinnecks_result,"\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3))
     end
 
-    println("Random sweeping hyperplane time: ", round(sweepTime,3))
+    println("Sweep: ", round(sweepTime,3),", Projection: ",round(projection_total_time,3),", MIP: ",round(MIP_total_time,3),", Chinneck: ",round(chinneck_total_time,3))
 end
 
 function main(filename)
@@ -379,4 +385,4 @@ function main(filename)
     runAndPrintAllAlgorithms(data)
 end
 
-main("2dpoints.csv")
+main("points2.csv")
