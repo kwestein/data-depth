@@ -307,10 +307,9 @@ end
 function randomSweepingHyperplane(S, numIterations)
     numPoints = size(S,1)
     numDimensions::Int = length(S)/numPoints -1
-
     depth = [numPoints for i=1:numPoints]
 
-    @sync @parallel for max = 1:numIterations
+    depth = @sync @parallel (min) for itr=1:numIterations
         #random constraint
         coeff = 10*rand(1,numDimensions)-5
 
@@ -328,8 +327,9 @@ function randomSweepingHyperplane(S, numIterations)
             descending_depth = findin(descending_indices, i) - 1
             depth[i] = minimum([ascending_depth, descending_depth])
         end
-
+        depth
     end
+
     return depth
 end
 
@@ -353,9 +353,9 @@ function scatterPlotPoints(set)
 end
 
 function runAndPrintAllAlgorithms(data)
-    println("id","\t", "proj","\t","sweep","\t","MIP","\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time")
+    println("id","\t", "proj","\t","sweep","\t","MIP","\t\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time")
     tic()
-    S = randomSweepingHyperplane(data, 100)
+    S = randomSweepingHyperplane(data, 5000)
     sweepTime = toq()
     projection_total_time = 0
     MIP_total_time = 0
@@ -374,7 +374,7 @@ function runAndPrintAllAlgorithms(data)
         chinnecks_result = chinnecksHeuristics(data, i,false)
         chnck_time = toq()
         chinneck_total_time += chnck_time
-        println(i,"\t", projection_result,"\t",S[i],"\t",MIP_result,"\t",chinnecks_result,"\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3))
+        println(i,"\t", projection_result,"\t\t",S[i],"\t\t",MIP_result,"\t\t",chinnecks_result,"\t\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3))
     end
 
     println("Sweep: ", round(sweepTime,3),", Projection: ",round(projection_total_time,3),", MIP: ",round(MIP_total_time,3),", Chinneck: ",round(chinneck_total_time,3))
