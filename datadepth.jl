@@ -131,10 +131,6 @@ function projection(S, id, doPrint)
     n::Int = length(S)/size(S,1) -1
     tempConstraint = Array(Any,size(S,1),n)
 
-    #println("# of element : ", n)
-    #println("total points : ", size(S,1) + 1)
-    #print(p)
-
     #initialize gradientC and gradientCsquare
     gradientC = Array(Any,size(S,1),n)
     gradientCsquare = Array(Any,size(S,1),1)
@@ -146,44 +142,24 @@ function projection(S, id, doPrint)
            gradientCsquare[i] = gradientCsquare[i] + (gradientC[i,j])^2
 
         end
-
     end
 
     #select Random point
     currentP = 100*rand(1,n)-50
 
-    r = 1
-    randConstraint = 1
-    currentConsId = 0
-    for maxLoop = 1:5000
+    #checking start here
+    for maxLoop = 1:size(S,1)*10
+        try
         result = 0
         #select Random constraint
-        r = rand(1:size(S,1))
-        while r == randConstraint
-        #    print("oops")
-            r = rand(1:size(S,1))
-        end
+        results = evaluatedAllConstraint(currentP,gradientC)
+        randConstraint = getViolatedConstraintID(results)
 
-        randConstraint = r
+        deno = sqrt(gradientCsquare[randConstraint])
+        feaVecCoef = abs(epsilon-result)/(deno)
 
-        #evaluate constraint chosen
         for i = 1:n
-            result = result + currentP[i]*gradientC[randConstraint,i]
-        end
-
-        #if violate,update point
-        if result < 1
-            #feaVecCoef = (epsilon-result)/gradientCsquare[randConstraint]
-            #println(epsilon-result)
-            feaVecCoef = abs(epsilon-result)/(sqrt(gradientCsquare[randConstraint]))
-            #fv = zeros(Any,n)
-            for i = 1:n
-                currentP[i] = currentP[i] + feaVecCoef*gradientC[randConstraint,i]
-            end
-        #else choose another point
-        else
-            #randConstraint = rand(1:size(S,1))
-            continue
+            currentP[i] = currentP[i] + feaVecCoef*gradientC[randConstraint,i]
         end
 
         #checking number of violated constraint
@@ -198,14 +174,17 @@ function projection(S, id, doPrint)
             end
         end
 
-    #check if it has smaller depth and if it has smaller depth,record the constraint
+        #check if it has smaller depth and if it has smaller depth,record the constraint
+        #if tempDepth< 10
+        #    println(tempDepth)
+        #end
         if tempDepth < maxDepth
-            #tempConstraint = gradientC[randConstraint,1:end]
             maxDepth = tempDepth
         end
+        catch y
+            continue
+        end
     end
-    #println("Violated : ",countViolated(SS,tempConstraint))
-    println("Projection found depth of point ",id)
     return maxDepth
 end
 
