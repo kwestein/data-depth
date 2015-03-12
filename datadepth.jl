@@ -313,6 +313,31 @@ function randomSweepingHyperplane(S, numIterations)
     return depth
 end
 
+function evaluatedAllConstraint(p,constraints)
+    s = size(constraints,1)
+    n::Int = length(constraints)/s - 1
+    results = Array(Any,s,1)
+    for i = 1:size(constraints,1)
+        result = 0
+        for j = 1:n
+            result = result + p[j]*constraints[i,j]
+        end
+        results[i] = result
+    end
+    return results
+end
+
+#Get a random violated constraints
+function getViolatedConstraintID(results)
+    violated = Any[]
+    for i = 1:size(results,1)
+        if results[i] < 1
+            push!(violated,i)
+        end
+    end
+    return violated[rand(1:size(violated,1))]
+end
+
 function importCSVFile(filename)
     importFile(filename, ',')
 end
