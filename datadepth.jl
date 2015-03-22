@@ -1,9 +1,9 @@
-using JuMP
-using Clp
-using Cbc
-using Plotly
+@everywhere using JuMP
+@everywhere using Clp
+@everywhere using Cbc
+@everywhere using Plotly
 
-function chinnecksHeuristics(S, id, doPrint)
+function chinnecksHeuristics(S, id, doPrint, doParallel)
     coverSet = {}
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
@@ -50,20 +50,40 @@ function chinnecksHeuristics(S, id, doPrint)
 
         Z = [100.0 for i=1:length(candidates)]
 
-        @sync @parallel for j = 1:length(candidates)
-            if candidates[j]
-                candidate = constraints[j]
-                chgConstrRHS(candidate, -999)
+        if(doParallel)
+            @sync @parallel for j = 1:length(candidates)
+                if candidates[j]
+                    # candidate = constraints[j]
+                    # chgConstrRHS(candidate, -999)
 
-                solve(model)
-                Z[j] = getObjectiveValue(model)
+                    solve(model)
+                    Z[j] = getObjectiveValue(model)
 
-                if Z[j] == 0.0
-                    coverSet = [coverSet, {constraints[j]}]
-                    done = true
-                    break
-                else
-                    chgConstrRHS(candidate, epsilon)
+                    if Z[j] == 0.0
+                        coverSet = [coverSet, {constraints[j]}]
+                        done = true
+                        break
+                    else
+                        # chgConstrRHS(candidate, epsilon)
+                    end
+                end
+            end
+        else
+            for j = 1:length(candidates)
+                if candidates[j]
+                    candidate = constraints[j]
+                    chgConstrRHS(candidate, -999)
+
+                    solve(model)
+                    Z[j] = getObjectiveValue(model)
+
+                    if Z[j] == 0.0
+                        coverSet = [coverSet, {constraints[j]}]
+                        done = true
+                        break
+                    else
+                        chgConstrRHS(candidate, epsilon)
+                    end
                 end
             end
         end
@@ -284,31 +304,54 @@ function cc(S, id, doPrint)
     return maxDepth
 end
 
-function randomSweepingHyperplane(S, numIterations)
+function randomSweepingHyperplane(S, numIterations, doParallel)
     numPoints = size(S,1)
     numDimensions::Int = length(S)/numPoints -1
     depth = [numPoints for i=1:numPoints]
 
-    depth = @sync @parallel min for i in 1:numIterations
-        #random constraint
-        coeff = 10*rand(1,numDimensions)-5
+    if(doParallel)
+        depth = @sync @parallel min for i in 1:numIterations
+            #random constraint
+            coeff = 10*rand(1,numDimensions)-5
 
-        #evaluate all point with constraint
-        results = [sum([coeff[j]*S[i,j] for j = 1:numDimensions]) for i = 1:numPoints]
+            #evaluate all point with constraint
+            results = [sum([coeff[j]*S[i,j] for j = 1:numDimensions]) for i = 1:numPoints]
 
-        #sorting ascending
-        ascending_indices = sortperm(results)
+            #sorting ascending
+            ascending_indices = sortperm(results)
 
-        #sorting descending
-        descending_indices = sortperm(results, rev=true)
+            #sorting descending
+            descending_indices = sortperm(results, rev=true)
 
-        for i=1:numPoints
-            ascending_depth = findin(ascending_indices, i) - 1
-            descending_depth = findin(descending_indices, i) - 1
-            depth[i] = minimum([ascending_depth, descending_depth])
+            for i=1:numPoints
+                ascending_depth = findin(ascending_indices, i) - 1
+                descending_depth = findin(descending_indices, i) - 1
+                depth[i] = minimum([ascending_depth, descending_depth])
+            end
+            depth
         end
-        depth
+    else
+        for i in 1:numIterations
+            #random constraint
+            coeff = 10*rand(1,numDimensions)-5
+
+            #evaluate all point with constraint
+            results = [sum([coeff[j]*S[i,j] for j = 1:numDimensions]) for i = 1:numPoints]
+
+            #sorting ascending
+            ascending_indices = sortperm(results)
+
+            #sorting descending
+            descending_indices = sortperm(results, rev=true)
+
+            for i=1:numPoints
+                ascending_depth = findin(ascending_indices, i) - 1
+                descending_depth = findin(descending_indices, i) - 1
+                depth[i] = minimum([ascending_depth, descending_depth, depth[i]])
+            end
+        end
     end
+
 
     return depth
 end
@@ -357,74 +400,110 @@ function scatterPlotPoints(set)
     plot_url = response["url"]
 end
 
-function calculateTotalError(results, correctDepths)
-    sum([abs(results[i] - correctDepths[i]) for i=1:length(results)])
-end
+#for every point in every model: known depth, depth by method 1, depth
+#by method 2, depth by method 3, etc.
+#for every point in every model: time for method 1, time for method 2,
+#time for method 3, etc.
 
-function runAndPrintAllAlgorithms(data)
-    println("id","\t", "proj","\t","sweep","\t","MIP","\t\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time")
+#You can summarize simple stats like averge difference from actual, std
+#devn of difference from actual etc. And you can plot it in histograms,
+#performance profiles etc.
+function experiment1(data, results)
     tic()
-    S = randomSweepingHyperplane(data, 5000)
-    sweepTime = toq()
+    sweep_results = randomSweepingHyperplane(data, 1000)
+    sweep_deepest_point = indmax(sweep_results)
+    sweep_total_time = toc()
+    sweep_error = [abs(results[i] - sweep_results[i]) for i=1:size(data,1)]
+
     projection_total_time = 0
     MIP_total_time = 0
     chinneck_total_time = 0
 
-    for i = 1:size(data,1)
+    projection_results = [0 for i=1:size(data,1)]
+    MIP_results = [0 for i=1:size(data,1)]
+    chinneck_results = [0 for i=1:size(data,1)]
+
+    projection_error = [0 for i=1:size(data,1)]
+    MIP_error = [0 for i=1:size(data,1)]
+    chinneck_error = [0 for i=1:size(data,1)]
+
+    println("id","\t", "sweep","\t","proj","\t","MIP","\t\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time","\t",
+        "sweep error","\t","proj error","\t","MIP error","\t","chnck error")
+
+    for i=1:size(data, 1)
         tic()
-        projection_result = projection(data, i, false)
+        projection_results[i] = projection(data, i, false)
         proj_time = toq()
         projection_total_time += proj_time
+        projection_error[i] = abs(results[i] - projection_results[i])
+
         tic()
-        MIP_result = MIP(data, i, false)
+        MIP_results[i] = MIP(data, i, false)
         MIP_time = toq()
         MIP_total_time += MIP_time
+        MIP_error[i] = abs(results[i] - MIP_results[i])
+
         tic()
-        chinnecks_result = chinnecksHeuristics(data, i,false)
+        chinneck_results[i] = chinnecksHeuristics(data, i,false)
         chnck_time = toq()
         chinneck_total_time += chnck_time
-        println(i,"\t", projection_result,"\t\t",S[i],"\t\t",MIP_result,"\t\t",chinnecks_result,"\t\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3))
+        chinneck_error[i] = abs(results[i] - chinneck_results[i])
+
+        println(i,"\t", sweep_results[i],"\t\t",projection_results[i],"\t\t",MIP_results[i],"\t\t",chinneck_results[i],
+          "\t\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3),"\t\t",
+           "\t",sweep_error[i],"\t\t\t",projection_error[i],"\t\t\t",MIP_error[i],"\t\t\t", chinneck_error[i])
     end
 
-    println("Sweep: ", round(sweepTime,3),", Projection: ",round(projection_total_time,3),", MIP: ",round(MIP_total_time,3),", Chinneck: ",round(chinneck_total_time,3))
-end
-
-function findAllDepths(S, results)
-    tic()
-    sweep_results = randomSweepingHyperplane(S, 1000)
-    sweep_deepest_point = indmax(sweep_results)
-    sweep_deepest_time = toc()
-
-    tic()
-    chinneck_results = [chinnecksHeuristics(S, i,false) for i=1:size(S,1)]
-    chinneck_deepest_point = indmax(chinneck_results)
-    chinneck_deepest_time = toc()
-
-    tic()
-    MIP_results = [MIP(S, i,false) for i=1:size(S,1)]
-    MIP_deepest_point = indmax(MIP_results)
-    MIP_deepest_time = toc()
-
-    tic()
-    projection_results = [projection(S, i,false) for i=1:size(S,1)]
     projection_deepest_point = indmax(projection_results)
-    projection_deepest_time = toc()
-
-    sweep_error = calculateTotalError(sweep_results, results)
-    chinneck_error = calculateTotalError(chinneck_results, results)
-    projection_error = calculateTotalError(projection_results, results)
-    MIP_error = calculateTotalError(MIP_results, results)
-
-    println("Sweeping hyperplane deepest point: ",sweep_deepest_point," took ",round(sweep_deepest_time,3)," seconds with ",sweep_error," total errors")
-    println("Chinneck deepest point: ",chinneck_deepest_point," took ",round(chinneck_deepest_time,3)," seconds with ",chinneck_error," total errors")
-    println("MIP deepest point: ",MIP_deepest_point," took ",round(MIP_deepest_time,3)," seconds with 0 total errors")
-    println("Projection deepest point: ",projection_deepest_point," took ",round(projection_deepest_time,3)," seconds with ",projection_error," total errors")
+    chinneck_deepest_point = indmax(chinneck_results)
+    MIP_deepest_point = indmax(MIP_results)
+    println("Deepest: ","\t",MIP_deepest_point,"\t",round(MIP_total_time,3),"\t",sum(MIP_error))
 end
 
-function main(filename) #TODO: implement timeout
+function parallelExperiment(data)
+    tic()
+    randomSweepingHyperplane(data, 1000, true)
+    sweep_parallel_time = toc()
+
+    tic()
+    randomSweepingHyperplane(data, 1000, false)
+    sweep_sequential_time = toc()
+    println("Sweep parallel time: ",round(sweep_parallel_time,3)," Sweep Sequential time: ",round(sweep_sequential_time,3))
+
+    println("Parallel time Sequential time")
+    for i=1:size(data, 1)
+        tic()
+        chinnecksHeuristics(data, i,false, true)
+        chnck_parallel_time = toq()
+
+        tic()
+        chinnecksHeuristics(data, i,false, false)
+        chnck_time = toq()
+
+        println(round(chnck_parallel_time,3),"\t\t",round(chnck_time,3))
+    end
+
+        tic()
+        chinnecksHeuristics(data, 9,false, false)
+        chnck_time = toq()
+
+        println("Parallel time: ",round(chnck_parallel_time,3),"\t\tSequential time",round(chnck_time,3))
+end
+
+#You should set an upper time limit for each solution, say a few minutes
+#The data to capture is:
+# - for every model, statistics on size (number of features, number of
+#instances)
+# - for every point in every model: time for method 1, time for method 2,
+#time for method 3 etc. plus an outcome (success or failure or timeout)
+# - also run the complete set of models on 1 core, on 2 cores, on 3 cores,
+#on 4 cores etc. and collect the data for each of these.
+function experiment2(time_limit, num_cores, data, results)
+
+end
+
+function main(filename)
     data = importCSVFile(string("datasets/",filename))
     results = importCSVFile(string("results/",filename))
-    findAllDepths(data, results)
+    parallelExperiment(data)
 end
-
-main("DavidBremner.csv")
