@@ -1,7 +1,7 @@
 @everywhere using JuMP
 @everywhere using Clp
 @everywhere using Cbc
-@everywhere using Plotly
+#@everywhere using Plotly
 
 function chinnecksHeuristics(S, id, doPrint, doParallel)
     coverSet = {}
@@ -53,8 +53,8 @@ function chinnecksHeuristics(S, id, doPrint, doParallel)
         if(doParallel)
             @sync @parallel for j = 1:length(candidates)
                 if candidates[j]
-                    # candidate = constraints[j]
-                    # chgConstrRHS(candidate, -999)
+                    candidate = constraints[j]
+                    chgConstrRHS(candidate, -999)
 
                     solve(model)
                     Z[j] = getObjectiveValue(model)
@@ -64,7 +64,7 @@ function chinnecksHeuristics(S, id, doPrint, doParallel)
                         done = true
                         break
                     else
-                        # chgConstrRHS(candidate, epsilon)
+                        chgConstrRHS(candidate, epsilon)
                     end
                 end
             end
@@ -142,8 +142,7 @@ function MIP(S, id, doPrint)
     convert(Int64, round(depth))
 end
 
-function projection(S, id, doPrint)
-    #SS = S
+function cc(S, id, numConstraints)
     maxDepth = size(S,1)
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
@@ -157,140 +156,32 @@ function projection(S, id, doPrint)
     for i = 1:size(S,1)
         gradientCsquare[i] = 0
         for j = 1:n
-           #temp = S[i,j] - p[j]
            gradientC[i,j] = S[i,j] - p[j]
            gradientCsquare[i] = gradientCsquare[i] + (gradientC[i,j])^2
-
         end
     end
 
-    #select Random point
     currentP = 100*rand(1,n)-50
+    results = evaluateAllConstraints(currentP,gradientC)
 
-    #checking start here
+    result = 0
     for maxLoop = 1:size(S,1)*10
-        try
-        result = 0
-        #select Random constraint
-        results = evaluatedAllConstraint(currentP,gradientC)
-        randConstraint = getViolatedConstraintID(results)
+        r = unique([getViolatedConstraintID(results) for i=1:numConstraints])
+        feasibilityVectorCoeffficient = [abs(epsilon-results[r[i]])/(sqrt(gradientCsquare[r[i]])) for i=1:length(r)]
+        z = [sum([feasibilityVectorCoeffficient[j]*gradientC[r[j],i] for j = 1:length(r)]) for i = 1:n]
+        currentP = [currentP[i] + (z[i]/length(r)) for i=1:n]
 
-        deno = sqrt(gradientCsquare[randConstraint])
-        feaVecCoef = abs(epsilon-result)/(deno)
-
-        for i = 1:n
-            currentP[i] = currentP[i] + feaVecCoef*gradientC[randConstraint,i]
-        end
-
-        #checking number of violated constraint
-        tempDepth = 0
-        for i = 1:size(S,1)
-            result = 0
-            for j = 1:n
-                result = result + currentP[j]*gradientC[i,j]
-            end
-            if result < 1
-                tempDepth = tempDepth + 1
-            end
-        end
+        #checking number of violated constraints
+        result = [sum([currentP[j]*gradientC[i,j] for j=1:n]) for i = 1:size(S,1)]
+        tempDepth = length(find(x -> x < 1,result))
 
         #check if it has smaller depth and if it has smaller depth,record the constraint
-        #if tempDepth< 10
-        #    println(tempDepth)
-        #end
-        if tempDepth < maxDepth
-            maxDepth = tempDepth
-        end
-        catch y
-            continue
-        end
+        maxDepth = minimum([tempDepth, maxDepth])
     end
     return maxDepth
 end
 
-function cc(S, id, doPrint)
-    maxDepth = size(S,1)
-    p = S[id,:]
-    SS = S
-    S = S[[1:id-1,id+1:end],:]
-    epsilon = 1
-    n::Int = length(S)/size(S,1) -1
-    tempConstraint = Array(Any,size(S,1),n)
-    done = false
-
-    #initialize gradientC and gradientCsquare
-    gradientC = Array(Any,size(S,1),n)
-    gradientCsquare = Array(Any,size(S,1),1)
-    for i = 1:size(S,1)
-        gradientCsquare[i] = 0
-        for j = 1:n
-           #temp = S[i,j] - p[j]
-           gradientC[i,j] = S[i,j] - p[j]
-           gradientCsquare[i] = gradientCsquare[i] + (gradientC[i,j])^2
-
-        end
-
-    end
-
-    #select Random point
-    currentP = 100*rand(1,n)-50
-
-    currentConsId = 0
-    for maxLoop = 1:1000
-        try
-        results = evaluatedAllConstraint(currentP,gradientC)
-
-        r = Any[]
-        for i = 1:3
-            push!(r,getViolatedConstraintID(results))
-            if i == 1
-                continue
-            end
-            count = 0
-            while r[i] == r[i-1] &&  count < 10000
-                r[i] = getViolatedConstraintID(results)
-                count = count + 1
-            end
-        end
-        feaVecCoef = Any[]
-        for i = 1:3
-            push!(feaVecCoef,abs(epsilon-results[r[i]])/(sqrt(gradientCsquare[r[i]])))
-        end
-
-        for i = 1:n
-            z = 0
-            for j = 1:3
-                z = z +feaVecCoef[j]*gradientC[r[j],i]
-            end
-            currentP[i] = currentP[i] + (z/3)
-        end
-
-        #checking number of violated constraint
-        tempDepth = 0
-        for i = 1:size(S,1)
-            result = 0
-            for j = 1:n
-                result = result + currentP[j]*gradientC[i,j]
-            end
-            if result < 1
-                tempDepth = tempDepth + 1
-            end
-        end
-
-    #check if it has smaller depth and if it has smaller depth,record the constraint
-        if tempDepth < maxDepth
-            #tempConstraint = gradientC[randConstraint,1:end]
-            maxDepth = tempDepth
-        end
-        catch y
-            #continue
-        end
-    end
-    #countViolated(SS,tempConstraint)
-    return maxDepth
-end
-
-function randomSweepingHyperplane(S, numIterations, doParallel)
+function randomSweepingHyperplane(S, numIterations, doParallel) #TODO: gives same result(ish) no matter how many iterations
     numPoints = size(S,1)
     numDimensions::Int = length(S)/numPoints -1
     depth = [numPoints for i=1:numPoints]
@@ -317,7 +208,7 @@ function randomSweepingHyperplane(S, numIterations, doParallel)
             depth
         end
     else
-        for i in 1:numIterations
+        for i in 1:numIterations #TODO does this actually keep and compare all results
             #random constraint
             coeff = 10*rand(1,numDimensions)-5
 
@@ -342,28 +233,16 @@ function randomSweepingHyperplane(S, numIterations, doParallel)
     return depth
 end
 
-function evaluatedAllConstraint(p,constraints)
+function evaluateAllConstraints(p, constraints)
     s = size(constraints,1)
-    n::Int = length(constraints)/s - 1
-    results = Array(Any,s,1)
-    for i = 1:size(constraints,1)
-        result = 0
-        for j = 1:n
-            result = result + p[j]*constraints[i,j]
-        end
-        results[i] = result
-    end
-    return results
+    numDims = length(constraints)/s - 1
+    violatedAmount = [sum([p[j]*constraints[i,j] for j = 1:numDims]) for i = 1:s]
+    return violatedAmount
 end
 
 #Get a random violated constraints
 function getViolatedConstraintID(results)
-    violated = Any[]
-    for i = 1:size(results,1)
-        if results[i] < 1
-            push!(violated,i)
-        end
-    end
+    violated = find(x -> x < 1,results)
     return violated[rand(1:size(violated,1))]
 end
 
@@ -375,16 +254,16 @@ function importFile(filename, delim)
     readdlm(filename, delim)
 end
 
-function scatterPlotPoints(set)
-    Plotly.signin("kirstenwesteinde", "bfod5kcm69")
-    data = [[
-        "x" => set[:, 1],
-        "y" => set[:, 2],
-        "type" => "scatter"
-    ]]
-    response = Plotly.plot(data, ["filename" => "depth-data-scatter", "fileopt" => "overwrite"])
-    plot_url = response["url"]
-end
+#function scatterPlotPoints(set)
+#    Plotly.signin("kirstenwesteinde", "bfod5kcm69")
+#    data = [[
+#        "x" => set[:, 1],
+#        "y" => set[:, 2],
+#        "type" => "scatter"
+#    ]]
+#    response = Plotly.plot(data, ["filename" => "depth-data-scatter", "fileopt" => "overwrite"])
+#    plot_url = response["url"]
+#end
 
 #for every point in every model: known depth, depth by method 1, depth
 #by method 2, depth by method 3, etc.
@@ -395,55 +274,70 @@ end
 #devn of difference from actual etc. And you can plot it in histograms,
 #performance profiles etc.
 function experiment1(data, results)
-    tic()
-    sweep_results = randomSweepingHyperplane(data, 1000)
-    sweep_deepest_point = indmax(sweep_results)
-    sweep_total_time = toc()
-    sweep_error = [abs(results[i] - sweep_results[i]) for i=1:size(data,1)]
+#    tic()
+#    sweep_results = randomSweepingHyperplane(data, 1000, false)
+#    sweep_deepest_point = indmax(sweep_results)
+#    sweep_total_time = toc()
+#    sweep_error = [abs(results[i] - sweep_results[i]) for i=1:size(data,1)]
 
     projection_total_time = 0
+    cc_total_time = 0
     MIP_total_time = 0
     chinneck_total_time = 0
 
     projection_results = [0 for i=1:size(data,1)]
+    cc_results = [0 for i=1:size(data,1)]
     MIP_results = [0 for i=1:size(data,1)]
     chinneck_results = [0 for i=1:size(data,1)]
 
     projection_error = [0 for i=1:size(data,1)]
+    cc_error = [0 for i=1:size(data,1)]
     MIP_error = [0 for i=1:size(data,1)]
     chinneck_error = [0 for i=1:size(data,1)]
 
-    println("id","\t", "sweep","\t","proj","\t","MIP","\t\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time","\t",
-        "sweep error","\t","proj error","\t","MIP error","\t","chnck error")
+#    println("id","\t", "sweep","\t","proj","\t","MIP","\t\t","chnck","\t", "proj time","\t","MIP time","\t","chnck time","\t",
+#        "sweep error","\t","proj error","\t","MIP error","\t","chnck error")
+println("id\tresult\tproj\tcc\tproj time\tcc time\tproj error\tcc error")
 
     for i=1:size(data, 1)
         tic()
-        projection_results[i] = projection(data, i, false)
+        projection_results[i] = cc(data, i, 1)
         proj_time = toq()
         projection_total_time += proj_time
         projection_error[i] = abs(results[i] - projection_results[i])
 
         tic()
-        MIP_results[i] = MIP(data, i, false)
-        MIP_time = toq()
-        MIP_total_time += MIP_time
-        MIP_error[i] = abs(results[i] - MIP_results[i])
+        cc_results[i] = cc(data, i, 3)
+        cc_time = toq()
+        cc_total_time += cc_time
+        cc_error[i] = abs(results[i] - cc_results[i])
 
-        tic()
-        chinneck_results[i] = chinnecksHeuristics(data, i,false)
-        chnck_time = toq()
-        chinneck_total_time += chnck_time
-        chinneck_error[i] = abs(results[i] - chinneck_results[i])
+#        tic()
+#        MIP_results[i] = MIP(data, i, false)
+#        MIP_time = toq()
+#        MIP_total_time += MIP_time
+#        MIP_error[i] = abs(results[i] - MIP_results[i])
 
-        println(i,"\t", sweep_results[i],"\t\t",projection_results[i],"\t\t",MIP_results[i],"\t\t",chinneck_results[i],
-          "\t\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3),"\t\t",
-           "\t",sweep_error[i],"\t\t\t",projection_error[i],"\t\t\t",MIP_error[i],"\t\t\t", chinneck_error[i])
+#        tic()
+#        chinneck_results[i] = chinnecksHeuristics(data, i,false)
+#        chnck_time = toq()
+#        chinneck_total_time += chnck_time
+#        chinneck_error[i] = abs(results[i] - chinneck_results[i])
+
+#        println(i,"\t", sweep_results[i],"\t\t",projection_results[i],"\t\t",MIP_results[i],"\t\t",chinneck_results[i],
+#          "\t\t",round(proj_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3),"\t\t",
+#           "\t",sweep_error[i],"\t\t\t",projection_error[i],"\t\t\t",MIP_error[i],"\t\t\t", chinneck_error[i])
+
+           println(i,"\t",results[i],"\t\t",projection_results[i],"\t\t",cc_results[i],
+             "\t\t",round(proj_time,3),"\t\t",round(cc_time,3),"\t\t",
+              projection_error[i],"\t\t\t",cc_error[i])
     end
 
     projection_deepest_point = indmax(projection_results)
-    chinneck_deepest_point = indmax(chinneck_results)
-    MIP_deepest_point = indmax(MIP_results)
-    println("Deepest: ","\t",MIP_deepest_point,"\t",round(MIP_total_time,3),"\t",sum(MIP_error))
+    println("Total projection error: ",sum(projection_error)," total CC error:",sum(cc_error))
+#    chinneck_deepest_point = indmax(chinneck_results)
+#    MIP_deepest_point = indmax(MIP_results)
+#    println("Deepest: ","\t",MIP_deepest_point,"\t",round(MIP_total_time,3),"\t",sum(MIP_error))
 end
 
 function parallelExperiment(data)
@@ -491,5 +385,5 @@ end
 function main(filename)
     data = importCSVFile(string("datasets/",filename))
     results = importCSVFile(string("results/",filename))
-    parallelExperiment(data)
+    experiment1(data,results)
 end
