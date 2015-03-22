@@ -233,53 +233,36 @@ function cc(S, id, doPrint)
     end
 
     #select Random point
-    currentP = 10*rand(1,n)-5
+    currentP = 100*rand(1,n)-50
 
-    r1 = 1
-    r2 = 1
-    r3 = 1
     currentConsId = 0
     for maxLoop = 1:1000
-        count = 0
-        while !done
-            result1 = 0
-            result2 = 0
-            result3 = 0
+        try
+        results = evaluatedAllConstraint(currentP,gradientC)
 
-            #TODO : Make array of random number instead hardcode
-            #select THREE Random constraint
-            r1 = rand(1:size(S,1))
-            r2 = rand(1:size(S,1))
-            r3 = rand(1:size(S,1))
-            while r1 == r2 || r2 == r3 || r1 == r3
-                if r1 == r2
-                    r2 = rand(1:size(S,1))
-                else
-                    r3 = rand(1:size(S,1))
-                end
+        r = Any[]
+        for i = 1:3
+            push!(r,getViolatedConstraintID(results))
+            if i == 1
+                continue
             end
-            #evaluate constraints chosen
-            for i = 1:n
-                result1 = result1 + currentP[i]*gradientC[r1,i]
-                result2 = result2 + currentP[i]*gradientC[r2,i]
-                result3 = result3 + currentP[i]*gradientC[r3,i]
-            end
-            if result1 + result2 + result3 < 3
-                break
-            end
-            count = count + 1
-            if count > 10000
-                done = true
+            count = 0
+            while r[i] == r[i-1] &&  count < 10000
+                r[i] = getViolatedConstraintID(results)
+                count = count + 1
             end
         end
-        if done == true
-            break
+        feaVecCoef = Any[]
+        for i = 1:3
+            push!(feaVecCoef,abs(epsilon-results[r[i]])/(sqrt(gradientCsquare[r[i]])))
         end
-        feaVecCoef1 = abs(epsilon-result1)/(sqrt(gradientCsquare[r1]))
-        feaVecCoef2 = abs(epsilon-result2)/(sqrt(gradientCsquare[r2]))
-        feaVecCoef3 = abs(epsilon-result3)/(sqrt(gradientCsquare[r3]))
+
         for i = 1:n
-            currentP[i] = currentP[i] + ((feaVecCoef1*gradientC[r1,i]+feaVecCoef2*gradientC[r2,i]+feaVecCoef3*gradientC[r3,i])/3)
+            z = 0
+            for j = 1:3
+                z = z +feaVecCoef[j]*gradientC[r[j],i]
+            end
+            currentP[i] = currentP[i] + (z/3)
         end
 
         #checking number of violated constraint
@@ -296,8 +279,11 @@ function cc(S, id, doPrint)
 
     #check if it has smaller depth and if it has smaller depth,record the constraint
         if tempDepth < maxDepth
-            tempConstraint = gradientC[randConstraint,1:end]
+            #tempConstraint = gradientC[randConstraint,1:end]
             maxDepth = tempDepth
+        end
+        catch y
+            #continue
         end
     end
     #countViolated(SS,tempConstraint)
