@@ -1,7 +1,6 @@
 @everywhere using JuMP
 @everywhere using Clp
 @everywhere using Cbc
-#@everywhere using Plotly
 
 function chinnecksHeuristics(S, id, doPrint, doParallel)
     coverSet = {}
@@ -191,52 +190,112 @@ function cc(S, id, numConstraints)
     return maxDepth
 end
 
-function randomSweepingHyperplane(S, numIterations, doParallel) #TODO: gives same result(ish) no matter how many iterations
+function cc(S, id, doPrint)
+    maxDepth = size(S,1)
+    p = S[id,:]
+    SS = S
+    S = S[[1:id-1,id+1:end],:]
+    epsilon = 1
+    n::Int = length(S)/size(S,1) -1
+    tempConstraint = Array(Any,size(S,1),n)
+    done = false
+
+    #initialize gradientC and gradientCsquare
+    gradientC = Array(Any,size(S,1),n)
+    gradientCsquare = Array(Any,size(S,1),1)
+    for i = 1:size(S,1)
+        gradientCsquare[i] = 0
+        for j = 1:n
+           #temp = S[i,j] - p[j]
+           gradientC[i,j] = S[i,j] - p[j]
+           gradientCsquare[i] = gradientCsquare[i] + (gradientC[i,j])^2
+
+        end
+
+    end
+
+    #select Random point
+    currentP = 100*rand(1,n)-50
+
+    currentConsId = 0
+    for maxLoop = 1:1000
+        try
+        results = evaluatedAllConstraint(currentP,gradientC)
+
+        r = Any[]
+        for i = 1:3
+            push!(r,getViolatedConstraintID(results))
+            if i == 1
+                continue
+            end
+            count = 0
+            while r[i] == r[i-1] &&  count < 10000
+                r[i] = getViolatedConstraintID(results)
+                count = count + 1
+            end
+        end
+        feaVecCoef = Any[]
+        for i = 1:3
+            push!(feaVecCoef,abs(epsilon-results[r[i]])/(sqrt(gradientCsquare[r[i]])))
+        end
+
+        for i = 1:n
+            z = 0
+            for j = 1:3
+                z = z +feaVecCoef[j]*gradientC[r[j],i]
+            end
+            currentP[i] = currentP[i] + (z/3)
+        end
+
+        #checking number of violated constraint
+        tempDepth = 0
+        for i = 1:size(S,1)
+            result = 0
+            for j = 1:n
+                result = result + currentP[j]*gradientC[i,j]
+            end
+            if result < 1
+                tempDepth = tempDepth + 1
+            end
+        end
+
+    #check if it has smaller depth and if it has smaller depth,record the constraint
+        if tempDepth < maxDepth
+            #tempConstraint = gradientC[randConstraint,1:end]
+            maxDepth = tempDepth
+        end
+        catch y
+            #continue
+        end
+    end
+    #countViolated(SS,tempConstraint)
+    return maxDepth
+end
+
+function randomSweepingHyperplane(S, numIterations)
     numPoints = size(S,1)
     numDimensions::Int = length(S)/numPoints -1
     depth = [numPoints for i=1:numPoints]
 
-    if(doParallel)
-        depth = @sync @parallel min for i in 1:numIterations
-            #random constraint
-            coeff = 10*rand(1,numDimensions)-5
+    depth = @sync @parallel min for i in 1:numIterations
+        #random constraint
+        coeff = 10*rand(1,numDimensions)-5
 
-            #evaluate all point with constraint
-            results = [sum([coeff[j]*S[i,j] for j = 1:numDimensions]) for i = 1:numPoints]
+        #evaluate all point with constraint
+        results = [sum([coeff[j]*S[i,j] for j = 1:numDimensions]) for i = 1:numPoints]
 
-            #sorting ascending
-            ascending_indices = sortperm(results)
+        #sorting ascending
+        ascending_indices = sortperm(results)
 
-            #sorting descending
-            descending_indices = sortperm(results, rev=true)
+        #sorting descending
+        descending_indices = sortperm(results, rev=true)
 
-            for i=1:numPoints
-                ascending_depth = findin(ascending_indices, i) - 1
-                descending_depth = findin(descending_indices, i) - 1
-                depth[i] = minimum([ascending_depth, descending_depth])
-            end
-            depth
+        for i=1:numPoints
+            ascending_depth = findin(ascending_indices, i) - 1
+            descending_depth = findin(descending_indices, i) - 1
+            depth[i] = minimum([ascending_depth, descending_depth])
         end
-    else
-        for i in 1:numIterations #TODO does this actually keep and compare all results
-            #random constraint
-            coeff = 10*rand(1,numDimensions)-5
-
-            #evaluate all point with constraint
-            results = [sum([coeff[j]*S[i,j] for j = 1:numDimensions]) for i = 1:numPoints]
-
-            #sorting ascending
-            ascending_indices = sortperm(results)
-
-            #sorting descending
-            descending_indices = sortperm(results, rev=true)
-
-            for i=1:numPoints
-                ascending_depth = findin(ascending_indices, i) - 1
-                descending_depth = findin(descending_indices, i) - 1
-                depth[i] = minimum([ascending_depth, descending_depth, depth[i]])
-            end
-        end
+        depth
     end
 
 
@@ -395,5 +454,23 @@ end
 function main(filename)
     data = importCSVFile(string("datasets/",filename))
     results = importCSVFile(string("results/",filename))
-    experiment1(data,results)
+
+    numIterations = 1000
+    tic()
+    randomSweepingHyperplane(data, numIterations)
+    one_proc = toc()
+    addprocs(1)
+    tic()
+    randomSweepingHyperplane(data, numIterations)
+    two_proc = toc()
+    addprocs(2)
+    tic()
+    randomSweepingHyperplane(data, numIterations)
+    three_proc = toc()
+    addprocs(3)
+    tic()
+    randomSweepingHyperplane(data, numIterations)
+    four_proc = toc()
+
+    println("1 processor: ",round(one_proc,3),", 2: ",round(two_proc,3),", 3: ",round(three_proc,3),", 4: ",round(four_proc,3))
 end
