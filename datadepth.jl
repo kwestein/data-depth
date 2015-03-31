@@ -162,21 +162,26 @@ function cc(S, id, numConstraints)
     end
 
     currentP = 100*rand(1,n)-50
-    results = evaluateAllConstraints(currentP,gradientC)
 
-    result = 0
     for maxLoop = 1:size(S,1)*10
+            result = 0
+            results = evaluateAllConstraints(currentP,gradientC)
+
+        #try
         r = unique([getViolatedConstraintID(results) for i=1:numConstraints])
-        feasibilityVectorCoeffficient = [abs(epsilon-results[r[i]])/(sqrt(gradientCsquare[r[i]])) for i=1:length(r)]
+
+        feasibilityVectorCoeffficient = [abs(epsilon-results[r[i]])/((gradientCsquare[r[i]])) for i=1:length(r)]
         z = [sum([feasibilityVectorCoeffficient[j]*gradientC[r[j],i] for j = 1:length(r)]) for i = 1:n]
         currentP = [currentP[i] + (z[i]/length(r)) for i=1:n]
 
         #checking number of violated constraints
+
         result = [sum([currentP[j]*gradientC[i,j] for j=1:n]) for i = 1:size(S,1)]
         tempDepth = length(find(x -> x < 1,result))
 
         #check if it has smaller depth and if it has smaller depth,record the constraint
         maxDepth = minimum([tempDepth, maxDepth])
+
     end
     return maxDepth
 end
