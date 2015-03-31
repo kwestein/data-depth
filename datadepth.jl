@@ -32,22 +32,14 @@ function chinnecksHeuristics(S, id)
 
         Z = [100.0 for i=1:length(candidates)]
 
-        for j = 1:length(candidates)
-            if candidates[j]
-                candidate = constraints[j]
-                chgConstrRHS(candidate, -999)
-
-                solve(model)
-                Z[j] = getObjectiveValue(model)
-
-                if Z[j] == 0.0
-                    coverSet = [coverSet, {constraints[j]}]
-                    done = true
-                    break
-                else
-                    chgConstrRHS(candidate, epsilon)
-                end
+        index = 1
+        np = nprocs()
+        while index + np <= length(candidates) #TODO: length(candidates) may not be cleanly divisible by np
+            for i=1:np
+                local_model, local_constraints = buildModel(S, n, p, epsilon)
+                remotecall_fetch(i, evaluateCandidate, candidates[index + i], index + i, S, local_model, local_constraints, coverSet, epsilon)
             end
+            index += np
         end
 
         minConstraint = null
@@ -91,6 +83,25 @@ function buildModel(S, n, p, epsilon)
     @setObjective(model, Min, sum{e[i], i=1:length(S)})
 
     return model, constraints
+end
+
+function evaluateCandidate(is_candidate, index, S, model, constraints, coverSet, epsilon)
+    if is_candidate
+        candidate = constraints[index]
+        chgConstrRHS(candidate, -999)
+
+        solve(model)
+        objective_value = getObjectiveValue(model)
+
+        if objective_value == 0.0
+            coverSet = [coverSet, {constraints[index]}]
+            done = true
+        else
+            chgConstrRHS(candidate, epsilon)
+        end
+    end
+
+    coverSet
 end
 
 function MIP(S, id)
