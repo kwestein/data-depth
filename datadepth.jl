@@ -2,36 +2,19 @@
 @everywhere using Clp
 @everywhere using Cbc
 
-function chinnecksHeuristics(S, id, doPrint, doParallel)
+function chinnecksHeuristics(S, id)
     coverSet = {}
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
     epsilon = 1
     n::Int = length(S)/size(S,1) -1
-    model = Model(solver=ClpSolver())
 
-    @defVar(model, a[1:n] )
-    @defVar(model, e[1:length(S)] >= 0)
-
-    @defConstrRef constraints[1:size(S,1)]
-
-    for i = 1:size(S,1)
-        constraint = 0
-        for j = 1:n
-           constraint = constraint + (S[i,j] - p[j])*a[j]
-        end
-        constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
-    end
+    model, constraints = buildModel(S, n, p, epsilon)
 
     candidates = [false for i=1:length(constraints)]
 
     done = false
     while !done
-        @setObjective(model, Min, sum{e[i], i=1:length(S)})
-        if doPrint
-            print(model)
-        end
-
         solve(model)
         if getObjectiveValue(model) < 0.5
             done = true
@@ -49,40 +32,20 @@ function chinnecksHeuristics(S, id, doPrint, doParallel)
 
         Z = [100.0 for i=1:length(candidates)]
 
-        if(doParallel)
-            @sync @parallel for j = 1:length(candidates)
-                if candidates[j]
-                    candidate = constraints[j]
-                    chgConstrRHS(candidate, -999)
+        for j = 1:length(candidates)
+            if candidates[j]
+                candidate = constraints[j]
+                chgConstrRHS(candidate, -999)
 
-                    solve(model)
-                    Z[j] = getObjectiveValue(model)
+                solve(model)
+                Z[j] = getObjectiveValue(model)
 
-                    if Z[j] == 0.0
-                        coverSet = [coverSet, {constraints[j]}]
-                        done = true
-                        break
-                    else
-                        chgConstrRHS(candidate, epsilon)
-                    end
-                end
-            end
-        else
-            for j = 1:length(candidates)
-                if candidates[j]
-                    candidate = constraints[j]
-                    chgConstrRHS(candidate, -999)
-
-                    solve(model)
-                    Z[j] = getObjectiveValue(model)
-
-                    if Z[j] == 0.0
-                        coverSet = [coverSet, {constraints[j]}]
-                        done = true
-                        break
-                    else
-                        chgConstrRHS(candidate, epsilon)
-                    end
+                if Z[j] == 0.0
+                    coverSet = [coverSet, {constraints[j]}]
+                    done = true
+                    break
+                else
+                    chgConstrRHS(candidate, epsilon)
                 end
             end
         end
@@ -109,7 +72,28 @@ function chinnecksHeuristics(S, id, doPrint, doParallel)
     length(coverSet)
 end
 
-function MIP(S, id, doPrint)
+function buildModel(S, n, p, epsilon)
+    model = Model(solver=ClpSolver())
+
+    @defVar(model, a[1:n] )
+    @defVar(model, e[1:length(S)] >= 0)
+
+    @defConstrRef constraints[1:size(S,1)]
+
+    for i = 1:size(S,1)
+        constraint = 0
+        for j = 1:n
+           constraint = constraint + (S[i,j] - p[j])*a[j]
+        end
+        constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
+    end
+
+    @setObjective(model, Min, sum{e[i], i=1:length(S)})
+
+    return model, constraints
+end
+
+function MIP(S, id)
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
 
@@ -131,10 +115,6 @@ function MIP(S, id, doPrint)
     end
 
     @setObjective(model, Min, sum{y[i], i=1:length(S)})
-
-    if doPrint
-      print(model)
-    end
 
     solve(model)
     depth = getObjectiveValue(model)
@@ -190,7 +170,7 @@ function cc(S, id, numConstraints)
     return maxDepth
 end
 
-function cc(S, id, doPrint)
+function cc(S, id)
     maxDepth = size(S,1)
     p = S[id,:]
     SS = S
@@ -451,10 +431,7 @@ function experiment2(time_limit, num_cores, data, results)
 
 end
 
-function main(filename)
-    data = importCSVFile(string("datasets/",filename))
-    results = importCSVFile(string("results/",filename))
-
+function testRandomSweepingHyperplaneParallel()
     numIterations = 1000
     tic()
     randomSweepingHyperplane(data, numIterations)
@@ -473,4 +450,10 @@ function main(filename)
     four_proc = toc()
 
     println("1 processor: ",round(one_proc,3),", 2: ",round(two_proc,3),", 3: ",round(three_proc,3),", 4: ",round(four_proc,3))
+end
+
+function main(filename)
+    data = importCSVFile(string("datasets/",filename))
+    results = importCSVFile(string("results/",filename))
+    chinnecksHeuristics(data, 8)
 end
