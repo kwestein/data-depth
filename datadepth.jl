@@ -2,7 +2,7 @@
 @everywhere using Clp
 @everywhere using Cbc
 
-function chinnecksHeuristics(S, id)
+function chinnecksHeuristicsParallel(S, id)
     coverSet = {}
     coverSetIndices = {}
     p = S[id,:]
@@ -11,7 +11,7 @@ function chinnecksHeuristics(S, id)
     n::Int = length(S)/size(S,1) -1
     model = Model(solver=ClpSolver())
 
-    @defVar(model, a[1:n] )
+    @defVar(model, a[1:n])
     @defVar(model, e[1:length(S)] >= 0)
 
     @defConstrRef constraints[1:size(S,1)]
@@ -49,12 +49,14 @@ function chinnecksHeuristics(S, id)
 
         np = nprocs()  # determine the number of processes available
         num_calls = length(candidates)
+        completed = [false for i=1:length(candidates)]
         i = 1
         # function to produce the next work item from the queue.
         # in this case it's just an index.
         nextidx() = (idx=i; i+=1; idx)
         @sync begin
-            for proc=1:np
+            for l = 1:length(workers())
+                proc = workers()[l]
                 if proc != myid() || np == 1
                     @async begin
                         while true
@@ -64,9 +66,9 @@ function chinnecksHeuristics(S, id)
                             end
 
                             if candidates[idx]
-                                 Z[idx], candidate, done = evaluateCandidate(S, p, idx, coverSetIndices)
-                                 if done
-                                     coverSet = [coverSet, {candidate}]
+                                 Z[idx], completed[idx] = remotecall_fetch(proc, evaluateCandidate, S, p, idx, coverSetIndices)
+                                 if completed[idx]
+                                     coverSet = [coverSet, {constraints[idx]}]
                                      coverSetIndices = [coverSetIndices, {idx}]
                                      break
                                  end
@@ -84,8 +86,8 @@ function chinnecksHeuristics(S, id)
             minConstraint = constraints[minIndex]
 
             if (minConstraint != null)
-                coverSet = [coverSet, {minConstraint}]
-                coverSetIndices = [coverSetIndices, {minIndex}]
+                push!(coverSet, minConstraint)
+                push!(coverSetIndices, minIndex)
                 chgConstrRHS(minConstraint, -999)
             end
         end
@@ -94,7 +96,91 @@ function chinnecksHeuristics(S, id)
     length(coverSet)
 end
 
-function buildModel(S, p, coverSetIndices)
+function chinnecksHeuristics(S, id)
+    coverSet = {}
+    p = S[id,:]
+    S = S[[1:id-1,id+1:end],:]
+    epsilon = 1
+    n::Int = length(S)/size(S,1) -1
+    model = Model(solver=ClpSolver())
+
+    @defVar(model, a[1:n] )
+    @defVar(model, e[1:length(S)] >= 0)
+
+    @defConstrRef constraints[1:size(S,1)]
+
+    for i = 1:size(S,1)
+        constraint = 0
+        for j = 1:n
+           constraint = constraint + (S[i,j] - p[j])*a[j]
+        end
+        constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
+    end
+
+    candidates = [false for i=1:length(constraints)]
+
+    done = false
+    while !done
+        @setObjective(model, Min, sum{e[i], i=1:length(S)})
+
+        solve(model)
+        if getObjectiveValue(model) < 0.5
+            done = true
+            break
+        end
+
+        for i = 1:length(candidates)
+            if getDual(constraints[i]) > 0.0
+                candidates[i] = true
+            else
+                candidates[i] = false
+            end
+        end
+
+
+        Z = [100.0 for i=1:length(candidates)]
+
+        for j = 1:length(candidates)
+            if candidates[j]
+                candidate = constraints[j]
+                chgConstrRHS(candidate, -999)
+
+                solve(model)
+                Z[j] = getObjectiveValue(model)
+
+                if Z[j] == 0.0
+                    coverSet = [coverSet, {constraints[j]}]
+                    done = true
+                    break
+                else
+                    chgConstrRHS(candidate, epsilon)
+                end
+            end
+        end
+
+        minConstraint = null
+        minIndex = 0
+        if !done
+            Znew = 9999999
+            for i = 1:length(constraints)
+                if candidates[i]
+                    if Z[i] < Znew
+                        Znew = Z[i]
+                        minConstraint = constraints[i]
+                        minIndex = i
+                    end
+                end
+            end
+            coverSet = [coverSet, {minConstraint}]
+            chgConstrRHS(minConstraint, -999)
+            candidates[minIndex] = false
+        end
+    end
+
+    length(coverSet)
+end
+
+@everywhere function buildModel(S, p, coverSetIndices)
     epsilon = 1
     n::Int = length(S)/size(S,1) -1
     model = Model(solver=ClpSolver())
@@ -121,7 +207,7 @@ function buildModel(S, p, coverSetIndices)
     return model, constraints
 end
 
-function evaluateCandidate(S, p, idx, coverSetIndices)
+@everywhere function evaluateCandidate(S, p, idx, coverSetIndices)
     epsilon = 1
     local_model, local_constraints = buildModel(S, p, coverSetIndices)
 
@@ -132,12 +218,12 @@ function evaluateCandidate(S, p, idx, coverSetIndices)
     objective_value = getObjectiveValue(local_model)
 
     if objective_value == 0.0
-        return objective_value, candidate, true
+        return objective_value, true
     else
         chgConstrRHS(candidate, epsilon)
     end
 
-    return objective_value, candidate, false
+    return objective_value, false
 end
 
 function MIP(S, id)
@@ -368,8 +454,6 @@ end
 #devn of difference from actual etc. And you can plot it in histograms,
 #performance profiles etc.
 function experiment1(data, results)
-    for i = 1:4
-        addprocs(1)
         n = nprocs()
         tic()
         sweep_results = randomSweepingHyperplane(data, 1000)
@@ -381,22 +465,26 @@ function experiment1(data, results)
         cc_total_time = 0
         MIP_total_time = 0
         chinneck_total_time = 0
+        chinneck_parallel_total_time = 0
 
         projection_results = [0 for i=1:size(data,1)]
         cc_results = [0 for i=1:size(data,1)]
         MIP_results = [0 for i=1:size(data,1)]
         chinneck_results = [0 for i=1:size(data,1)]
+        chinneck_parallel_results = [0 for i=1:size(data,1)]
 
         projection_error = [0 for i=1:size(data,1)]
         cc_error = [0 for i=1:size(data,1)]
         MIP_error = [0 for i=1:size(data,1)]
         chinneck_error = [0 for i=1:size(data,1)]
+        chinneck_parallel_error = [0 for i=1:size(data,1)]
 
         println(n," workers results")
         println("---------------------")
 
-        println("id","\t", "sweep","\t","proj","\t","cc","\t","MIP","\t\t","chnck","\t", "proj time","\t", "cc time","\t","MIP time","\t","chnck time","\t",
-        "sweep error","\t","proj error","\t","cc error","\t","MIP error","\t","chnck error")
+        println("id","\t", "sweep","\t","proj","\t","cc","\t","MIP","\t\t","chnck","\t\t","chnckP","\t",
+                "proj time","\t", "cc time","\t","MIP time","\t","chnck time","\t","chnckP time","\t",
+                "sweep error","\t","proj error","\t","cc error","\t","MIP error","\t","chnck error","\t","chnckP error")
 
         for i=1:size(data, 1)
             tic()
@@ -423,15 +511,25 @@ function experiment1(data, results)
             chinneck_total_time += chnck_time
             chinneck_error[i] = abs(results[i] - chinneck_results[i])
 
-            println(i,"\t", sweep_results[i],"\t\t",projection_results[i],"\t\t",cc_results[i],"\t\t",MIP_results[i],"\t\t",chinneck_results[i],
-            "\t\t",round(proj_time,3),"\t\t",round(cc_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3),"\t\t",
-            "\t",sweep_error[i],"\t\t\t",projection_error[i],"\t\t\t",cc_error[i],"\t\t\t",MIP_error[i],"\t\t\t", chinneck_error[i])
+            tic()
+            chinneck_parallel_results[i] = chinnecksHeuristicsParallel(data, i)
+            chnck_parallel_time = toq()
+            chinneck_total_time += chnck_time
+            chinneck_parallel_error[i] = abs(results[i] - chinneck_parallel_results[i])
+
+            println(i,"\t", sweep_results[i],"\t\t",projection_results[i],"\t\t",cc_results[i],"\t\t",MIP_results[i],"\t\t",chinneck_results[i],"\t\t",chinneck_parallel_results[i],
+            "\t\t",round(proj_time,3),"\t\t",round(cc_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3),"\t\t", round(chnck_parallel_time,3),"\t\t",
+            "\t",sweep_error[i],"\t\t\t",projection_error[i],"\t\t\t",cc_error[i],"\t\t\t",MIP_error[i],"\t\t\t", chinneck_error[i],"\t\t\t", chinneck_parallel_error[i])
         end
-    end
 end
 
 function main(filename)
     data = importCSVFile(string("datasets/",filename))
     results = importCSVFile(string("results/",filename))
-    println(results[8]," vs. ",chinnecksHeuristics(data, 8))
+
+    chinnecksHeuristics(data, 4)
+    chinnecksHeuristicsParallel(data, 4)
+    MIP(data, 4)
+
+    #experiment1(data, results)
 end
