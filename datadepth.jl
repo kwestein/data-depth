@@ -4,6 +4,7 @@
 
 function chinnecksHeuristics(S, id)
     coverSet = {}
+    coverSetIndices = {}
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
     epsilon = 1
@@ -23,10 +24,8 @@ function chinnecksHeuristics(S, id)
         constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
     end
 
-    count = 1
     done = false
     while !done
-        println("-------------------------")
 
         @setObjective(model, Min, sum{e[i], i=1:length(S)})
         solve(model)
@@ -38,7 +37,6 @@ function chinnecksHeuristics(S, id)
 
         candidates = [false for i=1:length(constraints)]
         for i = 1:length(candidates)
-            println(constraints[i], ", dual: ",getDual(constraints[i]))
             if getDual(constraints[i]) > 0.0
                 candidates[i] = true
             else
@@ -47,18 +45,17 @@ function chinnecksHeuristics(S, id)
         end
 
 
-        Z = [9999999.0 for i=1:length(candidates)]
+        Z = [100.0 for i=1:length(candidates)]
 
         np = nprocs()  # determine the number of processes available
         num_calls = length(candidates)
-        println("numcalls: ",num_calls)
         i = 1
         # function to produce the next work item from the queue.
         # in this case it's just an index.
         nextidx() = (idx=i; i+=1; idx)
         @sync begin
-            for p=1:np
-                if p != myid() || np == 1
+            for proc=1:np
+                if proc != myid() || np == 1
                     @async begin
                         while true
                             idx = nextidx()
@@ -66,14 +63,14 @@ function chinnecksHeuristics(S, id)
                                 break
                             end
 
-                            if (candidates[idx])
-                                println("Evaluating candidates")
-                                Z[idx], constraints[idx], done = evaluateCandidate(S, id, idx, coverSet)
-                                if (done)
-                                   coverset = [coverSet, {constraints[idx]}]
-                                   break
-                                end
-                            end
+                            if candidates[idx]
+                                 Z[idx], candidate, done = evaluateCandidate(S, p, idx, coverSetIndices)
+                                 if done
+                                     coverSet = [coverSet, {candidate}]
+                                     coverSetIndices = [coverSetIndices, {idx}]
+                                     break
+                                 end
+                             end
                          end
                     end
                 end
@@ -87,26 +84,19 @@ function chinnecksHeuristics(S, id)
             minConstraint = constraints[minIndex]
 
             if (minConstraint != null)
-                println("minConstraint2: ",minConstraint)
                 coverSet = [coverSet, {minConstraint}]
+                coverSetIndices = [coverSetIndices, {minIndex}]
                 chgConstrRHS(minConstraint, -999)
             end
-        end
-        count = count + 1
-        if (count == 5)
-            done = true
         end
     end
 
     length(coverSet)
 end
 
-function buildModel(S, id, coverSet)
-    p = S[id,:]
-    S = S[[1:id-1,id+1:end],:]
+function buildModel(S, p, coverSetIndices)
     epsilon = 1
     n::Int = length(S)/size(S,1) -1
-
     model = Model(solver=ClpSolver())
 
     @defVar(model, a[1:n] )
@@ -119,10 +109,10 @@ function buildModel(S, id, coverSet)
         for j = 1:n
            constraint = constraint + (S[i,j] - p[j])*a[j]
         end
-        constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
-        if constraints[i] in coverSet
-            println("Don't add constraint")
-            chgConstrRHS(constraints[i], -999)
+        if i in coverSetIndices
+            constraints[i] = @addConstraint(model, constraint + e[i] >= -999)
+        else
+            constraints[i] = @addConstraint(model, constraint + e[i] >= epsilon)
         end
     end
 
@@ -131,22 +121,23 @@ function buildModel(S, id, coverSet)
     return model, constraints
 end
 
-function evaluateCandidate(S, id, idx, coverSet) #TODO: returns candidate, true (true means done and add to cover set)
+function evaluateCandidate(S, p, idx, coverSetIndices)
     epsilon = 1
-    local_model, local_constraints = buildModel(S, id, coverSet)
+    local_model, local_constraints = buildModel(S, p, coverSetIndices)
 
-    chgConstrRHS(local_constraints[idx], -999)
+    candidate = local_constraints[idx]
+    chgConstrRHS(candidate, -999)
 
     solve(local_model)
     objective_value = getObjectiveValue(local_model)
 
     if objective_value == 0.0
-        return objective_value, local_constraints[idx], true
+        return objective_value, candidate, true
     else
-        chgConstrRHS(local_constraints[idx], epsilon)
+        chgConstrRHS(candidate, epsilon)
     end
 
-    return objective_value, local_constraints[idx], false
+    return objective_value, candidate, false
 end
 
 function MIP(S, id)
