@@ -482,54 +482,53 @@ function experiment1(data, results)
         println(n," workers results")
         println("---------------------")
 
-        println("id","\t", "sweep","\t","proj","\t","cc","\t","MIP","\t\t","chnck","\t\t","chnckP","\t",
+        println("id","\t", "sweep","\t","proj","\t","cc","\t","MIP","\t","chnck","\t","chnckP","\t",
                 "proj time","\t", "cc time","\t","MIP time","\t","chnck time","\t","chnckP time","\t",
                 "sweep error","\t","proj error","\t","cc error","\t","MIP error","\t","chnck error","\t","chnckP error")
 
         for i=1:size(data, 1)
-            tic()
-            projection_results[i] = cc(data, i, 1)
-            proj_time = toq()
-            projection_total_time += proj_time
-            projection_error[i] = abs(results[i] - projection_results[i])
+            
+                tic()
+                projection_results[i] = cc(data, i, 1)
+                proj_time = toq()
+                projection_total_time += proj_time
+                projection_error[i] = abs(results[i] - projection_results[i])
 
-            tic()
-            cc_results[i] = cc(data, i, 3)
-            cc_time = toq()
-            cc_total_time += cc_time
-            cc_error[i] = abs(results[i] - cc_results[i])
+                tic()
+                cc_results[i] = cc(data, i, 3)
+                cc_time = toq()
+                cc_total_time += cc_time
+                cc_error[i] = abs(results[i] - cc_results[i])
 
-            tic()
-            MIP_results[i] = MIP(data, i)
-            MIP_time = toq()
-            MIP_total_time += MIP_time
-            MIP_error[i] = abs(results[i] - MIP_results[i])
+                tic()
+                MIP_results[i] = MIP(data, i)
+                MIP_time = toq()
+                MIP_total_time += MIP_time
+                MIP_error[i] = abs(results[i] - MIP_results[i])
 
-            tic()
-            chinneck_results[i] = chinnecksHeuristics(data, i)
-            chnck_time = toq()
-            chinneck_total_time += chnck_time
-            chinneck_error[i] = abs(results[i] - chinneck_results[i])
+                tic()
+                chinneck_results[i] = chinnecksHeuristics(data, i)
+                chnck_time = toq()
+                chinneck_total_time += chnck_time
+                chinneck_error[i] = abs(results[i] - chinneck_results[i])
 
-            tic()
-            chinneck_parallel_results[i] = chinnecksHeuristicsParallel(data, i)
-            chnck_parallel_time = toq()
-            chinneck_total_time += chnck_time
-            chinneck_parallel_error[i] = abs(results[i] - chinneck_parallel_results[i])
+                tic()
+                chinneck_parallel_results[i] = chinnecksHeuristicsParallel(data, i)
+                chnck_parallel_time = toq()
+                chinneck_total_time += chnck_time
+                chinneck_parallel_error[i] = abs(results[i] - chinneck_parallel_results[i])
 
-            println(i,"\t", sweep_results[i],"\t\t",projection_results[i],"\t\t",cc_results[i],"\t\t",MIP_results[i],"\t\t",chinneck_results[i],"\t\t",chinneck_parallel_results[i],
-            "\t\t",round(proj_time,3),"\t\t",round(cc_time,3),"\t\t",round(MIP_time,3),"\t\t", round(chnck_time,3),"\t\t", round(chnck_parallel_time,3),"\t\t",
-            "\t",sweep_error[i],"\t\t\t",projection_error[i],"\t\t\t",cc_error[i],"\t\t\t",MIP_error[i],"\t\t\t", chinneck_error[i],"\t\t\t", chinneck_parallel_error[i])
+                println(i,"\t", sweep_results[i],"\t",projection_results[i],"\t",cc_results[i],"\t",MIP_results[i],"\t",chinneck_results[i],"\t",chinneck_parallel_results[i],
+                "\t",round(proj_time,3),"\t",round(cc_time,3),"\t",round(MIP_time,3),"\t", round(chnck_time,3),"\t", round(chnck_parallel_time,3),"\t",
+                "\t",sweep_error[i],"\t\t",projection_error[i],"\t\t",cc_error[i],"\t\t",MIP_error[i],"\t\t", chinneck_error[i],"\t\t", chinneck_parallel_error[i])
+            end
         end
+        println("Sweep time: ",round(sweep_total_time, 3))
 end
 
 function main(filename)
-    data = importCSVFile(string("datasets/",filename))
-    results = importCSVFile(string("results/",filename))
+    data = importCSVFile(string("/Users/kirstenwesteinde/Documents/data-depth/datasets/",filename))
+    results = importCSVFile(string("/Users/kirstenwesteinde/Documents/data-depth/results/",filename))
 
-    chinnecksHeuristics(data, 4)
-    chinnecksHeuristicsParallel(data, 4)
-    MIP(data, 4)
-
-    #experiment1(data, results)
+    experiment1(data, results)
 end
