@@ -2,7 +2,7 @@
 @everywhere using Clp
 @everywhere using Cbc
 
-function chinnecksHeuristicsParallel(S, id)
+@everywhere function chinnecksHeuristicsParallel(S, id)
     coverSet = {}
     coverSetIndices = {}
     p = S[id,:]
@@ -47,7 +47,7 @@ function chinnecksHeuristicsParallel(S, id)
 
         Z = [100.0 for i=1:length(candidates)]
 
-        np = nprocs()  # determine the number of processes available
+        np = nprocs() - 1  # determine the number of processes available
         num_calls = length(candidates)
         completed = [false for i=1:length(candidates)]
         i = 1
@@ -94,6 +94,12 @@ function chinnecksHeuristicsParallel(S, id)
     end
 
     length(coverSet)
+end
+
+@everywhere function chinnecksHeuristicsParallel(args...)
+    S = args[1][1]
+    id = args[1][2]
+    chinnecksHeuristicsParallel(S,id)
 end
 
 @everywhere function chinnecksHeuristics(S, id)
@@ -181,8 +187,8 @@ end
 end
 
 @everywhere function chinnecksHeuristics(args...)
-    S = args[1]
-    id = args[2]
+    S = args[1][1]
+    id = args[1][2]
     chinnecksHeuristics(S,id)
 end
 
@@ -232,7 +238,7 @@ end
     return objective_value, false
 end
 
-function MIP(S, id)
+@everywhere function MIP(S, id)
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
 
@@ -260,7 +266,14 @@ function MIP(S, id)
     convert(Int64, round(depth))
 end
 
-function cc(S, id, numConstraints)
+@everywhere function MIP(args...)
+    S = args[1][1]
+    id = args[1][2]
+
+    MIP(S, id)
+end
+
+@everywhere function cc(S, id, numConstraints)
     maxDepth = size(S,1)
     p = S[id,:]
     S = S[[1:id-1,id+1:end],:]
@@ -307,6 +320,14 @@ function cc(S, id, numConstraints)
         end
     end
     return maxDepth
+end
+
+@everywhere function cc(args...)
+    S = args[1][1]
+    id = args[1][2]
+    numConstraints = args[1][3]
+
+    cc(S, id, numConstraints)
 end
 
 function cc(S, id)
@@ -485,56 +506,80 @@ function experiment1(data, results)
         chinneck_error = [0 for i=1:size(data,1)]
         chinneck_parallel_error = [0 for i=1:size(data,1)]
 
-        println(n," workers results")
+        println(n-1," workers results")
         println("---------------------")
 
         println("id","\t", "sweep","\t","proj","\t","cc","\t","MIP","\t","chnck","\t","chnckP","\t",
                 "proj time","\t", "cc time","\t","MIP time","\t","chnck time","\t","chnckP time","\t",
                 "sweep error","\t","proj error","\t","cc error","\t","MIP error","\t","chnck error","\t","chnckP error")
 
-        for i=386:size(data, 1)
-        # [20,26,52,53,62,65,69,71,80,86,88,92,96,108,117,123,127,131,135,143,166,169,172,218,225,234,245,265,266,283,286,302,310,313,314,316,321,327,335,338,341,349,354,365,366,381]
+        missing_points = [20,26,52,53,62,65,69,71,80,86,88,92,96,108,117,123,127,131,135,143,166,169,172,218,225,234,245,265,266,283,286,302,310,313,314,316,321,327,335,338,341,349,354,365,366,381]
+        for j=1:length(missing_points)
+                i = missing_points[j]
                 tic()
                 projection_results[i] = cc(data, i, 1)
                 proj_time = toq()
                 projection_total_time += proj_time
-                projection_error[i] = abs(results[i] - projection_results[i])
+                if (projection_results[i] != null)
+                    projection_error[i] = abs(results[i] - projection_results[i])
+                end
 
                 tic()
                 cc_results[i] = cc(data, i, 3)
                 cc_time = toq()
                 cc_total_time += cc_time
-                cc_error[i] = abs(results[i] - cc_results[i])
+                if (cc_results[i] != null)
+                    cc_error[i] = abs(results[i] - cc_results[i])
+                end
 
                 tic()
-                MIP_results[i] = MIP(data, i)
+                MIP_results[i] = runWithTimeout(120, MIP, data, i)
                 MIP_time = toq()
                 MIP_total_time += MIP_time
-                MIP_error[i] = abs(results[i] - MIP_results[i])
+                if (MIP_results[i] != null)
+                    MIP_error[i] = abs(results[i] - MIP_results[i])
+                end
 
                 tic()
-                chinneck_results[i] = chinnecksHeuristics(data, i)
+                chinneck_results[i] = runWithTimeout(120, chinnecksHeuristics, data, i)
                 chnck_time = toq()
                 chinneck_total_time += chnck_time
-                chinneck_error[i] = abs(results[i] - chinneck_results[i])
+                if (chinneck_results[i] != null)
+                    chinneck_error[i] = abs(results[i] - chinneck_results[i])
+                end
 
                 tic()
-                chinneck_parallel_results[i] = chinnecksHeuristicsParallel(data, i)
+                chinneck_parallel_results[i] = runWithTimeout(120, chinnecksHeuristicsParallel, data, i)
                 chnck_parallel_time = toq()
-                chinneck_total_time += chnck_time
-                chinneck_parallel_error[i] = abs(results[i] - chinneck_parallel_results[i])
+                chinneck_parallel_total_time += chnck_parallel_time
+                if (chinneck_parallel_results[i] != null)
+                    chinneck_parallel_error[i] = abs(results[i] - chinneck_parallel_results[i])
+                end
 
-                # println(i,"\t", sweep_results[i],"\t",projection_results[i],"\t",cc_results[i],"\t",MIP_results[
-                # i],"\t",chinneck_results[i],"\t",chinneck_parallel_results[i],
-                # "\t",round(proj_time,3),"\t",round(cc_time,3),"\t",round(MIP_time,3),"\t", round(
-                # chnck_time,3),"\t", round(chnck_parallel_time,3),"\t",
-                # "\t",sweep_error[i],"\t\t",projection_error[i],"\t\t",cc_error[i],"\t\t",MIP_error[i],"\t\t", chinneck_error[i],"\t\t", chinneck_parallel_error[i])
-
-                println(i,"\t", sweep_results[i],"\t",projection_results[i],"\t",cc_results[i],"\t",chinneck_results[i],
-                "\t",round(proj_time,3),"\t",round(cc_time,3),"\t", round(chnck_time,3),"\t",
-                "\t",sweep_error[i],"\t\t",projection_error[i],"\t\t",cc_error[i],"\t\t", chinneck_error[i])
+                println(i,"\t", sweep_results[i],"\t",
+                        (projection_results[i] == null ? "timeout" : projection_results[i]),"\t",
+                        (cc_results[i] == null ? "timeout" : cc_results[i]),"\t",
+                        (MIP_results[i] == null ? "timeout" : MIP_results[i]),"\t",
+                        (chinneck_results[i] == null ? "timeout" : chinneck_results[i]),"\t",
+                        (chinneck_parallel_results[i] == null ? "timeout" : chinneck_parallel_results[i]),
+                        "\t",round(proj_time,3),"\t",round(cc_time,3),"\t",round(MIP_time,3),"\t", round(
+                        chnck_time,3),"\t", round(chnck_parallel_time,3),"\t\t",sweep_error[i],"\t\t",
+                        projection_error[i],"\t\t",cc_error[i],"\t\t",MIP_error[i],"\t\t", chinneck_error[i],"\t\t", chinneck_parallel_error[i])
         end
         println("Sweep time: ",round(sweep_total_time, 3))
+end
+
+function deepestPointExperiment(data, i=1000, j=size(data,1)/2)
+    # tic()
+    # c = deepestPointMIP(data, i, j)
+    # ct = toc()
+    tic()
+    c = deepestPointChnk(data, i, j)
+    ct = toc()
+
+    println(i," iterations and ",j," points")
+    # println("MIP deepest: ",c," in ",round(ct,3))
+    println("Chnk deepest: ",c," in ",round(ct,3))
 end
 
 function deepestPointChnk(data, numIterations, numPoints)
@@ -550,22 +595,7 @@ function deepestPointChnk(data, numIterations, numPoints)
     if (nprocs() > 1)
         for i=1:length(deepest_points)
             println(i)
-            p = workers()
-            response = RemoteRef()
-            @async put!(response, remotecall_fetch(p[1], ChinnecksHeuristics, data, deepest_points[i]))  # Run computation on newworker
-
-            start=time()
-            while !isready(response) && (time() - start) < 10.0  
-                sleep(0.1)
-            end
-
-            result = if !isready(response)
-                interrupt(p[1])      # interrupt the computation
-                println("Timed out")
-                null
-            else
-                chinnecks_results[deepest_points[i]] = fetch(response)
-            end
+            chinnecks_results[deepest_points[i]] = runWithTimeout(10, chinnecksHeuristics, data, deepest_points[i])
         end
     else
         for i=1:length(deepest_points)
@@ -577,27 +607,8 @@ function deepestPointChnk(data, numIterations, numPoints)
     return indmax(chinnecks_results)
 end
 
-function runWithTimeout(timeout, method, args...)
-    p = workers()
-    response = RemoteRef()
-    @async put!(response, remotecall_fetch(p[1], method, args))  # Run computation on newworker
-
-    start=time()
-    while !isready(response) && (time() - start) < timeout  
-        sleep(0.1)
-    end
-
-    result = if !isready(response)
-        interrupt(p[1])      # interrupt the computation on 2 
-        println("Timed out")
-        null
-    else
-        fetch(response)
-    end
-end
-
 function deepestPointMIP(data, numIterations, numPoints)
-    sweep_results = randomSweepingHyperplane(data, numIterations)
+    sweep_results = copy(randomSweepingHyperplane(data, numIterations))
     deepest_points = [0 for i=1:numPoints]
     for i = 1:numPoints
         deepest_points[i] = indmax(sweep_results)
@@ -605,23 +616,58 @@ function deepestPointMIP(data, numIterations, numPoints)
     end
 
     MIP_results = [0 for i=1:size(data,1)]
-    for i=1:length(deepest_points)
-        MIP_results[deepest_points[i]] = MIP(data, deepest_points[i])
+    if (nprocs() > 1)
+        for i=1:length(deepest_points)
+            println(i)
+            MIP_results[deepest_points[i]] = runWithTimeout(10, MIP, data, deepest_points[i])
+        end
+    else
+        for i=1:length(deepest_points)
+            println(i)
+            MIP_results[deepest_points[i]] = MIP(data, deepest_points[i])
+        end
     end
 
     return indmax(MIP_results)
 end
 
-function main(filename)
+#You must have at least 2 processors to run this function
+function runWithTimeout(timeout, method, args...)
+    # try
+        p = workers()
+        response = RemoteRef()
+        @async put!(response, remotecall_fetch(p[1], method, args))
+
+        start=time()
+        while !isready(response) && (time() - start) < timeout  
+            sleep(0.1)
+        end
+
+        result = if !isready(response)
+            interrupt(p[1]) 
+            null
+        else
+            fetch(response)
+        end
+    # catch 
+    # end
+end
+
+function getDataAndResults(filename)
     data = importCSVFile(string("/Users/kirstenwesteinde/Documents/data-depth/datasets/",filename))
     results = importCSVFile(string("/Users/kirstenwesteinde/Documents/data-depth/results/",filename))
 
-    i = 1000
-    j = size(data,1)/2
-    tic()
-    c = deepestPointChnk(data, i, j)
-    ct = toc()
-    println(i," iterations and ",j," points")
-    println("Chnk deepest: ",c," in ",round(ct,3))
-    #Bupa 66 - Pima 316
+    return (data, results)
+end
+
+function findAllDepths(filename)
+    data, results = getDataAndResults(filename)
+
+    experiment1(data, results)
+end
+
+function findDeepestPoint(filename)
+    data, results = getDataAndResults(filename)
+
+    deepestPointExperiment(data)
 end
